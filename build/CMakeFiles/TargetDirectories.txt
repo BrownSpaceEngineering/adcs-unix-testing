@@ -1,3 +1,0 @@
-/home/zmahan/dev/bse/adcs-unix-testing/build/CMakeFiles/adcs-test.dir
-/home/zmahan/dev/bse/adcs-unix-testing/build/CMakeFiles/edit_cache.dir
-/home/zmahan/dev/bse/adcs-unix-testing/build/CMakeFiles/rebuild_cache.dir
