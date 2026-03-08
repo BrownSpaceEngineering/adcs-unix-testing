@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/adcs-test.dir/link.d"
   "CMakeFiles/adcs-test.dir/linalg/Lapack/Blas/daxpy.c.o"
   "CMakeFiles/adcs-test.dir/linalg/Lapack/Blas/daxpy.c.o.d"
   "CMakeFiles/adcs-test.dir/linalg/Lapack/Blas/dcopy.c.o"
@@ -439,6 +440,10 @@ file(REMOVE_RECURSE
   "CMakeFiles/adcs-test.dir/linalg/LinearAlgebra/vertcat.c.o.d"
   "CMakeFiles/adcs-test.dir/linalg/LinearAlgebra/zeros.c.o"
   "CMakeFiles/adcs-test.dir/linalg/LinearAlgebra/zeros.c.o.d"
+  "CMakeFiles/adcs-test.dir/src/main.c.o"
+  "CMakeFiles/adcs-test.dir/src/main.c.o.d"
+  "CMakeFiles/adcs-test.dir/src/test.c.o"
+  "CMakeFiles/adcs-test.dir/src/test.c.o.d"
   "adcs-test"
   "adcs-test.pdb"
 )
