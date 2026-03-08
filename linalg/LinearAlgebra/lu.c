@@ -6,7 +6,7 @@
  */
 
 #include "declareFunctions.h"
-#include <utils.h>
+// #include <utils.h>
 
 /*
  * Do LU-factorization of a matrix A, size row x column, and get the L matrix, size row x column, and U matrix, size column x column.

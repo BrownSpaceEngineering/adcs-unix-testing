@@ -1,9 +1,9 @@
 #include "test.h"
-
+#include "declareFunctions.h"
 
 void test_matrix_product(void) {
 
-    test_log("----- testing matrix product -----\n");
+    printf("----- testing matrix product -----\n");
 
     // test case for 2*2 matrix product
     double A[4] = {1., 2., 3., 4.}; 
@@ -12,12 +12,12 @@ void test_matrix_product(void) {
     double C_expected[4] = {19., 22., 43., 50.};
 
     mul(A, B, false, C, 2, 2, 2); 
-    test_log_matrix(C, 2, 2); 
+    debug_matrix(C, 2, 2); 
 
     if (dbl_eps_close_matrix(C, C_expected, 2, 2, DBL_EPSILON)) {
-        test_log("2 * 2 matrix product test passed!\n");
+        printf("2 * 2 matrix product test passed!\n");
     } else {
-        test_log("2 * 2 matrix product test failed!\n");
+        printf("2 * 2 matrix product test failed!\n");
     }
 
     // 4*4 identity matrix test
@@ -29,9 +29,9 @@ void test_matrix_product(void) {
     mul(identity, identity, false, large_result, 4, 4, 4);
 
     if (dbl_eps_close_matrix(identity, large_result, 4, 4, DBL_EPSILON)) {
-        test_log("Identity matrix squared test passed!\n");
+        printf("Identity matrix squared test passed!\n");
     } else {
-        test_log("Identity matrix squared test failed!\n");
+        printf("Identity matrix squared test failed!\n");
     }
 
     double A_large[4*4] = {1., 2., 3., 4.,
@@ -42,17 +42,17 @@ void test_matrix_product(void) {
     mul(A_large, identity, false, large_result, 4, 4, 4);
 
     if (dbl_eps_close_matrix(A_large, large_result, 4, 4, DBL_EPSILON)) {
-        test_log("Identity post-multiplication test passed!\n");
+        printf("Identity post-multiplication test passed!\n");
     } else {
-        test_log("Identity post-multiplication test failed!\n");
+        printf("Identity post-multiplication test failed!\n");
     }
 
     mul(identity, A_large, false, large_result, 4, 4, 4);
 
     if (dbl_eps_close_matrix(A_large, large_result, 4, 4, DBL_EPSILON)) {
-        test_log("Identity pre-multiplication test passed!\n");
+        printf("Identity pre-multiplication test passed!\n");
     } else {
-        test_log("Identity pre-multiplication test failed!\n");
+        printf("Identity pre-multiplication test failed!\n");
     }
 
     double B_large[4*4] = {5.24829, 6.21496, 3.27374, 3.49223,
@@ -74,9 +74,9 @@ void test_matrix_product(void) {
     mul(B_large, C_large, false, large_result, 4, 4, 4);
 
     if (dbl_eps_close_matrix(large_result, large_multiplication_expected, 4, 4, DBL_EPSILON)) {
-        test_log("Large matrix product test passed!\n");
+        printf("Large matrix product test passed!\n");
     } else {
-        test_log("Large matrix product test failed!\n");
+        printf("Large matrix product test failed!\n");
     }
 } 
 

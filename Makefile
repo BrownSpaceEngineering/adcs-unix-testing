@@ -15,6 +15,9 @@ CFLAGS += -fsigned-char # Ensure that char is signed as your average c programme
 # Disable warnings for unused parameters due to ASF functions having unused parameters
 CFLAGS += -Wno-unused-parameter #Because some ASF functions have unused parameters, supress this warning
 
+INCLUDE_DIRS = -I./ -I./linalg/LinearAlgebra/ -I./linalg/Lapack/Include/
+CFLAGS += $(INCLUDE_DIRS)
+
 .phony = all clean 
 
 EXECS = adcs_test 

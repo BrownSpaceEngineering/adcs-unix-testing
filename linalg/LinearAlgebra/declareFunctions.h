@@ -19,7 +19,6 @@
 #include <float.h>	// required for DBL_EPSILON
 #include <stdbool.h>
 
-#include "logging.h"
 
 
 // This is for qpOASES - If you want red output results or not
@@ -29,8 +28,8 @@
 /*
  * Lapack library
  */
-#include "../../../src/linalg/Lapack/Include/f2c.h"
-#include "../../../src/linalg/Lapack/Include/clapack.h"
+#include "f2c.h"
+#include "clapack.h"
 // #include "../../src/Lapack/Include/blaswrap.h" // No need in this project! :)
 // #include "../../src/qpOASES/Header/qpOASES_e.h"
 

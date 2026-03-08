@@ -32,10 +32,10 @@ void print(double* A, int row, int column) {
 void debug_matrix(double* A, int row, int column) {
 	for(int i = 0; i < row; i++){
 		for(int j = 0; j < column; j++){
-			debug("%0.18f ", *(A++));
+			printf("%0.18f ", *(A++));
 		}
-		debug("\n");
+		printf("\n");
 	}
-	debug("\n");
+	printf("\n");
 
 }
