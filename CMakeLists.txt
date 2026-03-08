@@ -12,12 +12,12 @@ set(CMAKE_C_EXTENSIONS OFF)
 # to glob all src files in src/
 file(GLOB_RECURSE SRC CONFIGURE_DEPENDS linalg/*.c)
 # or manually specify:
-# set(SRC src/test.c)
-
-set(CMAKE_C_FLAGS_DEBUG "-static -Wall -Wextra -Wpedantic -g" CACHE STRING "" FORCE)
-set(CMAKE_C_FLAGS_RELEASE "-O3 -static -DNDEBUG" CACHE STRING "" FORCE)
+set(SRC SRC test.c)
+set(CMAKE_C_FLAGS_DEBUG "-Wall -Wextra -Wpedantic -g" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 
 add_executable(${EXECUTABLE} ${SRC})
+target_include_directories(${EXECUTABLE} PRIVATE .)
 target_include_directories(${EXECUTABLE} PRIVATE linalg)
 target_include_directories(${EXECUTABLE} PRIVATE linalg/LinearAlgebra)
 target_include_directories(${EXECUTABLE} PRIVATE linalg/Lapack/Blas)
