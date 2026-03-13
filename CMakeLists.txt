@@ -12,7 +12,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 # glob all of linalg
 file(GLOB_RECURSE SRC CONFIGURE_DEPENDS linalg/*.c)
 # manual specified sources:
-list(APPEND SRC src/main.c src/test.c)
+list(APPEND SRC src/main.c src/test.c src/quat.c)
 set(CMAKE_C_FLAGS_DEBUG "-Wall -Wextra -Wpedantic -g" CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 

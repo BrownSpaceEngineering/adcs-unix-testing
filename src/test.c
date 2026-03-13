@@ -1,6 +1,7 @@
 #include "src/test.h"
 #include "declareFunctions.h"
-
+#include "quat.h"
+#include "stdlib.h"
 // put test function definitions here
 
 void test_run_all(void) { test_matrix_product(); }
@@ -75,4 +76,119 @@ void test_matrix_product(void) {
     } else {
         printf("Large matrix product test failed!\n");
     }
+}
+
+void test_quaternion(void){
+    //Multiplication Tests
+    float res_quat[4];
+    float res_vec[3];
+    float test_qd[4];
+
+    //Identity
+    float id_quat[4] = {1, 0, 0, 0};
+    quat_multiply(id_quat, id_quat, res_quat);
+    float expected_res_id[4] = {1, 0, 0, 0};
+    if (f_eps_close_matrix(res_quat, expected_res_id, 1, 4, FLT_EPSILON)) {
+        printf("Quaternion Multiplication Identity Test Passed\n");
+    }
+    else{
+        printf("Quaternion Multiplication Identity Test Failed\n");
+    }
+
+    //Random Pair
+    float rp_quat_1[4] = {0.59513523, 0.53820488, 0.00657071, 0.5967465};
+    float rp_quat_2[4] = {0.78805728, 0.07242287, 0.48362778, 0.37393157};
+    quat_multiply(rp_quat_1, rp_quat_2, res_quat);
+    float expected_res_rp[4] = {0.203702175001, 0.181091486099, 0.134968324367, 0.952625236179};
+    if (f_eps_close_matrix(res_quat, expected_res_rp, 1, 4, FLT_EPSILON)) {
+        printf("Quaternion Multiplication Random Pair Test Passed\n");
+    }
+    else{
+        printf("Quaternion Multiplication Random Pair Test Failed\n");
+    }
+
+    //Reverse Random Pair
+    quat_multiply(rp_quat_2, rp_quat_1, res_quat);
+    float expected_res_rp_inv[4] = {0.203702175001, 0.753383864322, 0.451035727503, 0.432995312932};
+    if (f_eps_close_matrix(res_quat, expected_res_rp_inv, 1, 4, FLT_EPSILON)) {
+        printf("Quaternion Multiplication Reverse Random Pair Test Passed\n");
+    }
+    else{
+        printf("Quaternion Multiplication Reverse Random Pair Test Failed\n");
+    }
+    
+    //Test normalization
+    float unnorm_quat[4] = {0.44245429, 0.97492992, 0.24490942, 0.74845996};
+    float expected_norm_quat[4] = {0.33290518, 0.73354294, 0.18427127, 0.56314562};
+    quat_norm(unnorm_quat, res_quat);
+    if (f_eps_close_matrix(res_quat, expected_norm_quat, 1, 4, FLT_EPSILON)) {
+        printf("Quaternion Normalization Test Passed\n");
+    }
+    else{
+        printf("Quaternion Normalization Test Failed\n");
+    }
+    
+    //Test inversion
+    float quat_to_invert[4] = {7,4,5,9};
+    float expected_inverted_quat[4] = {0.0409357,-0.0233918,-0.0292398,-0.0526316};
+    quat_inv(quat_to_invert, res_quat);
+    if (f_eps_close_matrix(res_quat, expected_inverted_quat, 1, 4, FLT_EPSILON)) {
+        printf("Quaternion Inversion Test Passed\n");
+    }
+    else{
+        printf("Quaternion Inversion Test Failed\n");
+    }
+
+    //Test quat2rotvec using one of the random pair quaternions
+    float expected_rp_1_rotvec[3] = {1.2502, 0.0153, 1.3862};
+    quat2rotationvec(rp_quat_1, res_vec);
+    if (f_eps_close_matrix(res_vec, expected_rp_1_rotvec, 1, 3, 1e-4)) {
+        printf("Quaternion2RotVec Test Passed\n");
+    }
+    else{
+        printf("Quaternion2RotVec Test Failed\n");
+    }
+
+    //Test quat_diff using the random pair quats from before
+    float expected_quat_diff[4] = {0.7343,  -0.66718,  0.12461, 0.012084};
+    quat_diff(rp_quat_1, rp_quat_2, res_quat);
+    if (f_eps_close_matrix(res_quat, expected_quat_diff, 1, 4, 1e-4)) {
+        printf("Quaternion Diff Test Passed\n");
+    }
+    else{
+        printf("Quaternion Diff Test Failed\n");
+    }
+
+    //Test the robustness of quatdiff
+    float robustness_test[4];
+    quat_multiply(res_quat, rp_quat_1, robustness_test);
+    if (f_eps_close_matrix(robustness_test, rp_quat_2, 1, 4, 1e-4)) {
+        printf("Quaternion Robustness Test Passed\n");
+    }
+    else{
+        printf("Quaternion Robustness Test Failed\n");
+    }
+
+    //Test Rotation Vec --> Quat
+    float random_vec[3] = {0.96667295, 0.7002543,  0.61082435};
+    float expected_quat_conv[4] = {0.78355, 0.44793, 0.32448, 0.28304};
+    rotationvec2quat(random_vec, res_quat);
+    if (f_eps_close_matrix(res_quat, expected_quat_conv, 1, 4, 1e-4)) {
+        printf("RotVec2Quat Test Passed\n");
+    }
+    else{
+        printf("RotVec2Quat Test Failed\n");
+    }
+
+    //Test quat apply
+    float expected_rotated_vec[3] = {0.1828, 0.1028, 1.3244};
+    quat_apply(rp_quat_1, random_vec, res_vec);
+    if (f_eps_close_matrix(res_vec, expected_rotated_vec, 1, 3, 1e-4)) {
+        printf("Quat Apply Test Passed\n");
+    }
+    else{
+        printf("Quat Apply Test Failed\n");
+        printf("Got: %f, %f, %f\n", res_vec[0], res_vec[1], res_vec[2]);
+    }
+
 }
