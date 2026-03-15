@@ -20,10 +20,10 @@
 
     /* Local variables */
     integer i__, j, l, info;
-    logical nota, notb;
+    logfical nota, notb;
     real temp;
     integer ncola;
-    extern logical lsame_(char*, char*);
+    extern logfical lsame_(char*, char*);
     integer nrowa, nrowb;
     extern /* Subroutine */ int xerbla_(char*, integer*);
 

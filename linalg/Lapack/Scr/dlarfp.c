@@ -13,23 +13,23 @@
 #include "../../Lapack/Include/f2c.h"
 #include <math.h>
 
-/* Subroutine */ int dlarfp_(integer* n, doublereal* alpha, doublereal* x, integer* incx,
-                             doublereal* tau) {
+/* Subroutine */ int dlarfp_(integer* n, floatreal* alpha, floatreal* x, integer* incx,
+                             floatreal* tau) {
     /* System generated locals */
     integer i__1;
-    doublereal d__1;
+    floatreal d__1;
 
     /* Builtin functions */
-    double d_sign(doublereal*, doublereal*);
+    float d_sign(floatreal*, floatreal*);
 
     /* Local variables */
     integer j, knt;
-    doublereal beta;
-    extern doublereal dnrm2_(integer*, doublereal*, integer*);
-    extern /* Subroutine */ int dscal_(integer*, doublereal*, doublereal*, integer*);
-    doublereal xnorm;
-    extern doublereal dlapy2_(doublereal*, doublereal*), dlamch_(char*);
-    doublereal safmin, rsafmn;
+    floatreal beta;
+    extern floatreal dnrm2_(integer*, floatreal*, integer*);
+    extern /* Subroutine */ int dscal_(integer*, floatreal*, floatreal*, integer*);
+    floatreal xnorm;
+    extern floatreal dlapy2_(floatreal*, floatreal*), dlamch_(char*);
+    floatreal safmin, rsafmn;
 
     /*  -- LAPACK auxiliary routine (version 3.2) -- */
     /*     Univ. of Tennessee, Univ. of California Berkeley and NAG Ltd.. */
@@ -74,7 +74,7 @@
     /*          On exit, it is overwritten with the value beta. */
 
     /*  X       (input/output) DOUBLE PRECISION array, dimension */
-    /*                         (1+(N-2)*abs(INCX)) */
+    /*                         (1+(N-2)*fabs(INCX)) */
     /*          On entry, the vector x. */
     /*          On exit, it is overwritten with the vector v. */
 
@@ -137,7 +137,7 @@
         beta = d_sign(&d__1, alpha);
         safmin = dlamch_("S") / dlamch_("E");
         knt = 0;
-        if (abs(beta) < safmin) {
+        if (fabs(beta) < safmin) {
 
             /*           XNORM, BETA may be inaccurate; scale X and recompute them */
 
@@ -148,7 +148,7 @@
             dscal_(&i__1, &rsafmn, &x[1], incx);
             beta *= rsafmn;
             *alpha *= rsafmn;
-            if (abs(beta) < safmin) {
+            if (fabs(beta) < safmin) {
                 goto L10;
             }
 
