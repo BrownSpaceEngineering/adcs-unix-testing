@@ -5,4 +5,5 @@
 void test_run_all(void);
 void test_matrix_product(void);
 void test_quaternion(void);
+void test_adcs_algorithms(void);
 #endif

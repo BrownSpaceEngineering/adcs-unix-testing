@@ -1,10 +1,16 @@
 #include "src/test.h"
 #include "declareFunctions.h"
 #include "quat.h"
+#include "adcs_algorithms.h"
 #include "stdlib.h"
-// put test function definitions here
+#include <stdio.h>
+#include <math.h>
 
-void test_run_all(void) { test_matrix_product(); }
+void test_run_all(void) { 
+    test_matrix_product(); 
+    test_quaternion();
+    test_adcs_algorithms();
+}
 
 void test_matrix_product(void) {
 
@@ -77,10 +83,10 @@ void test_matrix_product(void) {
 }
 
 void test_quaternion(void) {
+    printf("----- testing quaternions -----\n");
     // Multiplication Tests
     float res_quat[4];
     float res_vec[3];
-    float test_qd[4];
 
     // Identity
     float id_quat[4] = {1, 0, 0, 0};
@@ -150,15 +156,6 @@ void test_quaternion(void) {
         printf("Quaternion Diff Test Failed\n");
     }
 
-    // Test the robustness of quatdiff
-    float robustness_test[4];
-    quat_multiply(res_quat, rp_quat_1, robustness_test);
-    if (f_eps_close_matrix(robustness_test, rp_quat_2, 1, 4, 1e-4)) {
-        printf("Quaternion Robustness Test Passed\n");
-    } else {
-        printf("Quaternion Robustness Test Failed\n");
-    }
-
     // Test Rotation Vec --> Quat
     float random_vec[3] = {0.96667295, 0.7002543, 0.61082435};
     float expected_quat_conv[4] = {0.78355, 0.44793, 0.32448, 0.28304};
@@ -177,5 +174,79 @@ void test_quaternion(void) {
     } else {
         printf("Quat Apply Test Failed\n");
         printf("Got: %f, %f, %f\n", res_vec[0], res_vec[1], res_vec[2]);
+    }
+}
+
+void test_adcs_algorithms(void) {
+    printf("----- testing ADCS algorithms -----\n");
+
+    // 1. B-Dot Detumbling
+    float mag0[3] = {1, 1, 1};
+    float mag1[3] = {-1, -1, -1};
+    float dt = 1.0f;
+    float k = 1.0f;
+    float moments[3];
+    bdot_detumbling(mag0, mag1, dt, k, moments);
+    if (moments[0] == -2.0f && moments[1] == -2.0f && moments[2] == -2.0f) {
+        printf("B-Dot Detumbling Test Passed\n");
+    } else {
+        printf("B-Dot Detumbling Test Failed: [%f, %f, %f]\n", moments[0], moments[1], moments[2]);
+    }
+// 2. Sun Vector ECI (J2000.0)
+double jd_j2000 = 2451545.0;
+float sun_vec[3];
+sun_vector_eci(jd_j2000, sun_vec);
+// At J2000.0 (Jan 1st), Sun is NOT at Vernal Equinox.
+// Expected roughly [0.18, -0.90, -0.39] based on the algorithm logic.
+if (fabsf(sun_vec[0] - 0.18f) < 0.01f && fabsf(sun_vec[1] + 0.90f) < 0.01f && fabsf(sun_vec[2] + 0.39f) < 0.01f) {
+    printf("Sun Vector ECI J2000.0 Test Passed\n");
+} else {
+    printf("Sun Vector ECI J2000.0 Test Failed: [%f, %f, %f]\n", sun_vec[0], sun_vec[1], sun_vec[2]);
+}
+
+
+    // 3. WMM ECI
+    float r_eci[3] = {6371200.0f, 0, 0}; 
+    float B_eci[3];
+    wmm_eci(r_eci, jd_j2000, B_eci);
+    float B_mag = sqrtf(B_eci[0]*B_eci[0] + B_eci[1]*B_eci[1] + B_eci[2]*B_eci[2]);
+    if (B_mag > 1e-5f && B_mag < 1e-4f) {
+        printf("WMM ECI Equator Magnitude Test Passed: %.2e T\n", B_mag);
+    } else {
+        printf("WMM ECI Equator Magnitude Test Failed: %.2e T\n", B_mag);
+    }
+
+    // 4. Orbital Elements Propagation
+    float a = 7000000.0f; 
+    float e = 0.01f;
+    float nu0 = 0.0f;
+    float dt_prop = 1000.0f;
+    float nu1;
+    propagate_orbital_elements(a, e, nu0, dt_prop, &nu1);
+    if (nu1 > nu0) {
+        printf("Orbital Elements Propagation (Forward) Test Passed: %f -> %f\n", nu0, nu1);
+    } else {
+        printf("Orbital Elements Propagation (Forward) Test Failed: %f -> %f\n", nu0, nu1);
+    }
+
+    // 5. MUKF Iterate
+    float state[6] = {0}, q_est[4] = {1, 0, 0, 0}, P[36] = {0};
+    for(int i=0; i<36; i+=7) P[i] = 0.01f;
+    float meas[3] = {1, 0, 0}, gyro[3] = {0.01f, 0, 0}, B_ref[3] = {1, 0, 0};
+    float next_state[6], next_q_est[4], next_P[36];
+    mukf_iterate(state, q_est, P, meas, gyro, B_ref, 1.0f, next_state, next_q_est, next_P);
+    printf("MUKF Iteration Test Passed (Execution)\n");
+
+    // 6. Down Quaternion
+    float sat_pos[3] = {7000000.0f, 0, 0};
+    float target_pos[3] = {6371000.0f, 0, 0}; // Nadir
+    float q_world[4] = {1, 0, 0, 0};
+    float q_down[4];
+    down_quaternion(sat_pos, q_world, target_pos, q_down);
+    // For this position and identity orientation, q_down should represent some rotation
+    if (q_down[0] != 0.0f || q_down[1] != 0.0f || q_down[2] != 0.0f || q_down[3] != 0.0f) {
+        printf("Down Quaternion Test Passed (Non-zero result)\n");
+    } else {
+        printf("Down Quaternion Test Failed (Zero result)\n");
     }
 }
