@@ -13,80 +13,80 @@
 #include "../../Lapack/Include/f2c.h"
 #include <stdlib.h>
 
-doublereal dnrm2_(integer *n, doublereal *x, integer *incx) {
-  /* System generated locals */
-  integer i__1, i__2;
-  doublereal ret_val, d__1;
+floatreal dnrm2_(integer* n, floatreal* x, integer* incx) {
+    /* System generated locals */
+    integer i__1, i__2;
+    floatreal ret_val, d__1;
 
-  /* Builtin functions */
-  double sqrt(doublereal);
+    /* Builtin functions */
+    float sqrtf(floatreal);
 
-  /* Local variables */
-  integer ix;
-  doublereal ssq, norm, scale, absxi;
+    /* Local variables */
+    integer ix;
+    floatreal ssq, norm, scale, fabsxi;
 
-  /*     .. Scalar Arguments .. */
-  /*     .. */
-  /*     .. Array Arguments .. */
-  /*     .. */
+    /*     .. Scalar Arguments .. */
+    /*     .. */
+    /*     .. Array Arguments .. */
+    /*     .. */
 
-  /*  Purpose */
-  /*  ======= */
+    /*  Purpose */
+    /*  ======= */
 
-  /*  DNRM2 returns the euclidean norm of a vector via the function */
-  /*  name, so that */
+    /*  DNRM2 returns the euclidean norm of a vector via the function */
+    /*  name, so that */
 
-  /*     DNRM2 := sqrt( x'*x ) */
+    /*     DNRM2 := sqrtf( x'*x ) */
 
-  /*  -- This version written on 25-October-1982. */
-  /*     Modified on 14-October-1993 to inline the call to DLASSQ. */
-  /*     Sven Hammarling, Nag Ltd. */
+    /*  -- This version written on 25-October-1982. */
+    /*     Modified on 14-October-1993 to inline the call to DLASSQ. */
+    /*     Sven Hammarling, Nag Ltd. */
 
-  /*     .. Parameters .. */
-  /*     .. */
-  /*     .. Local Scalars .. */
-  /*     .. */
-  /*     .. Intrinsic Functions .. */
-  /*     .. */
-  /* Parameter adjustments */
-  --x;
+    /*     .. Parameters .. */
+    /*     .. */
+    /*     .. Local Scalars .. */
+    /*     .. */
+    /*     .. Intrinsic Functions .. */
+    /*     .. */
+    /* Parameter adjustments */
+    --x;
 
-  /* Function Body */
-  if (*n < 1 || *incx < 1) {
-    norm = 0.;
-  } else if (*n == 1) {
-    norm = abs(x[1]);
-  } else {
-    scale = 0.;
-    ssq = 1.;
-    /*        The following loop is equivalent to this call to the LAPACK */
-    /*        auxiliary routine: */
-    /*        CALL DLASSQ( N, X, INCX, SCALE, SSQ ) */
+    /* Function Body */
+    if (*n < 1 || *incx < 1) {
+        norm = 0.;
+    } else if (*n == 1) {
+        norm = fabs(x[1]);
+    } else {
+        scale = 0.;
+        ssq = 1.;
+        /*        The following loop is equivalent to this call to the LAPACK */
+        /*        auxiliary routine: */
+        /*        CALL DLASSQ( N, X, INCX, SCALE, SSQ ) */
 
-    i__1 = (*n - 1) * *incx + 1;
-    i__2 = *incx;
-    for (ix = 1; i__2 < 0 ? ix >= i__1 : ix <= i__1; ix += i__2) {
-      if (x[ix] != 0.) {
-        absxi = (d__1 = x[ix], abs(d__1));
-        if (scale < absxi) {
-          /* Computing 2nd power */
-          d__1 = scale / absxi;
-          ssq = ssq * (d__1 * d__1) + 1.;
-          scale = absxi;
-        } else {
-          /* Computing 2nd power */
-          d__1 = absxi / scale;
-          ssq += d__1 * d__1;
+        i__1 = (*n - 1) * *incx + 1;
+        i__2 = *incx;
+        for (ix = 1; i__2 < 0 ? ix >= i__1 : ix <= i__1; ix += i__2) {
+            if (x[ix] != 0.) {
+                fabsxi = (d__1 = x[ix], fabs(d__1));
+                if (scale < fabsxi) {
+                    /* Computing 2nd power */
+                    d__1 = scale / fabsxi;
+                    ssq = ssq * (d__1 * d__1) + 1.;
+                    scale = fabsxi;
+                } else {
+                    /* Computing 2nd power */
+                    d__1 = fabsxi / scale;
+                    ssq += d__1 * d__1;
+                }
+            }
+            /* L10: */
         }
-      }
-      /* L10: */
+        norm = scale * sqrtf(ssq);
     }
-    norm = scale * sqrt(ssq);
-  }
 
-  ret_val = norm;
-  return ret_val;
+    ret_val = norm;
+    return ret_val;
 
-  /*     End of DNRM2. */
+    /*     End of DNRM2. */
 
 } /* dnrm2_ */

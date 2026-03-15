@@ -13,17 +13,17 @@
 #include "../../Lapack/Include/f2c.h"
 
 /* Subroutine */ int dgemm_(char* transa, char* transb, integer* m, integer* n, integer* k,
-                            doublereal* alpha, doublereal* a, integer* lda, doublereal* b,
-                            integer* ldb, doublereal* beta, doublereal* c__, integer* ldc) {
+                            floatreal* alpha, floatreal* a, integer* lda, floatreal* b,
+                            integer* ldb, floatreal* beta, floatreal* c__, integer* ldc) {
     /* System generated locals */
     integer a_dim1, a_offset, b_dim1, b_offset, c_dim1, c_offset, i__1, i__2, i__3;
 
     /* Local variables */
     integer i__, j, l, info;
-    logical nota, notb;
-    doublereal temp;
+    logfical nota, notb;
+    floatreal temp;
     integer ncola;
-    extern logical lsame_(char*, char*);
+    extern logfical lsame_(char*, char*);
     integer nrowa, nrowb;
     extern /* Subroutine */ int xerbla_(char*, integer*);
 
