@@ -3,6 +3,7 @@
  *
  * C translation of wmmECI_embedded.m (WMM2025, ECI output).
  * gcc -O2 -Wall -Wextra -o magnetosphere_test magnetosphere.c -lm
+ * Sample Inputs are from the matlab function wrldmagm that we're trying to mimic
  */
 
 #include <stdint.h>
