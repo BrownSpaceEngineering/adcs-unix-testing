@@ -2,14 +2,6 @@
  * wmm_eci.c
  *
  * C translation of wmmECI_embedded.m (WMM2025, ECI output).
- *
- * Constraints honoured:
- * - Zero heap usage  (no malloc / no free)
- * - No global variables
- * - Scalar types: STRICTLY float (float_32), int32_t, int64_t
- * - FSW LAPACK header included via wmm_eci.h guard
- *
- * Build:
  * gcc -O2 -Wall -Wextra -o magnetosphere_test magnetosphere.c -lm
  */
 
@@ -24,8 +16,8 @@ void wmmECI_embedded(const float r_ECI[3], float JD, float B_ECI[3]);
  * Internal constants
  * ========================================================================= */
 
-#define WMM_NMAX        12          /* Maximum spherical-harmonic degree    */
-#define WMM_DIM        (WMM_NMAX + 2)   /* array side length (1-indexed)   */
+#define WMM_NMAX        12          
+#define WMM_DIM        (WMM_NMAX + 2)   
 #define WMM_EPOCH       2025.0f     /* WMM2025 reference epoch              */
 
 /* WGS-84 / geomagnetic reference constants */
@@ -41,7 +33,7 @@ void wmmECI_embedded(const float r_ECI[3], float JD, float B_ECI[3]);
 #endif
 
 /* =========================================================================
- * WMM2025 embedded coefficients  (static const — not global storage)
+ * WMM2025 embedded coefficients 
  * Columns: n  m  g(nT)  h(nT)  gdot(nT/yr)  hdot(nT/yr)
  * ========================================================================= */
 
@@ -476,10 +468,8 @@ int main(void)
 
         float B_vec[3];
         
-        /* Run the C translation */
         wmmECI_embedded(r_check, jd, B_vec);
 
-        /* Replicate the internal ECI->NED conversion for the accuracy check using float */
         float theta = gmst_from_jd(jd);
         float cos_t = cosf(theta);
         float sin_t = sinf(theta);
@@ -495,7 +485,6 @@ int main(void)
         float B_N, B_E, B_D;
         synthesizeMagField(lat_rad, lon_rad, alt_m, g, h, &B_N, &B_E, &B_D);
 
-        /* Accuracy Math */
         float mat_N = tests[i].expected_ned[0];
         float mat_E = tests[i].expected_ned[1];
         float mat_D = tests[i].expected_ned[2];
@@ -509,14 +498,12 @@ int main(void)
         if (accuracy < -1.0f) accuracy = -1.0f;
         float angle_error_deg = acosf(accuracy) * 180.0f / (float)M_PI;
 
-        /* Calculate Magnitude */
         float r_mag = sqrtf(r_check[0]*r_check[0] + r_check[1]*r_check[1] + r_check[2]*r_check[2]) / 1000.0f;
         float bx_nt = B_vec[0] * 1.0e9f;
         float by_nt = B_vec[1] * 1.0e9f;
         float bz_nt = B_vec[2] * 1.0e9f;
         float b_mag = sqrtf(bx_nt*bx_nt + by_nt*by_nt + bz_nt*bz_nt);
 
-        /* Print formatting */
         printf("Matlab NED Vector (Correct magnetic field): [%.4e, %.4e, %.4e]\n", mat_N, mat_E, mat_D);
         printf("Our NED Vector: [%.4e, %.4e, %.4e]\n", B_N, B_E, B_D);
         printf("Our accuracy: %f\n", accuracy);
