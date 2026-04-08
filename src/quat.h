@@ -9,7 +9,7 @@ void quat_conj(float* q, float* resulting_quat);
 void quat_inv(float* q, float* resulting_quat);
 void quat_apply(float* q, float* vec, float* resulting_vec);
 void quat_diff(float* from_q, float* to_q, float* resulting_quat);
-void rotationvec2quat(float* vec, float* resulting_quat);
-void quat2rotationvec(float* q, float* resulting_vec);
+void rotation_vec_to_quat(float* vec, float* resulting_quat);
+void quat_to_rotation_vec(float* q, float* resulting_vec);
 
 #endif

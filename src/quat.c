@@ -64,7 +64,7 @@ void quat_diff(float* from_q, float* to_q, float* resulting_quat){
 }
 
 /*Converts an angle-axis rotation vector to a rotation quaternion*/
-void rotationvec2quat(float* vec, float* resulting_quat){
+void rotation_vec_to_quat(float* vec, float* resulting_quat){
     float angle = sqrt(pow(vec[0], 2) + pow(vec[1], 2) + pow(vec[2], 2));
     float axis[3] = {vec[0]/angle, vec[1]/angle, vec[2]/angle};
     if(angle == 0){
@@ -81,7 +81,7 @@ void rotationvec2quat(float* vec, float* resulting_quat){
     }
 }
 /*Converts q to an angle-axis rotation vector*/
-void quat2rotationvec(float* q, float* resulting_vec){
+void quat_to_rotation_vec(float* q, float* resulting_vec){
     if(q[0] < 0){
         q[0] = -q[0];
         q[1] = -q[1];
