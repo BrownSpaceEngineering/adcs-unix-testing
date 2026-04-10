@@ -1,6 +1,6 @@
-#include "src/test.h"
+#include "include/test.h"
 #include "declareFunctions.h"
-#include "quat.h"
+#include "include/quat.h"
 #include "stdlib.h"
 // put test function definitions here
 

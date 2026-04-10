@@ -1,4 +1,4 @@
-#include "quat.h"
+#include "include/quat.h"
 #include "math.h"
 
 /*Applies the Hamilton product*/
