@@ -3,12 +3,42 @@
 #include "include/quat.h"
 #include "stdlib.h"
 #include "include/iterate.h"
+#include "include/quest.h"
 // put test function definitions here
 
 void test_run_all(void) { 
-    test_iteration();
+    test_quest();
+    //test_iteration();
 }
 
+void test_quest(void){
+    float true_ref_to_body[4] = {0.78355, 0.44793, 0.32448, 0.28304};
+    float true_body_to_ref[4];
+    quat_inv(true_ref_to_body, true_body_to_ref);
+    float ref_1[3] = {1, 2, 3};
+    float ref_2[3] = {-4,3, -6};
+    float ref[6] = {1,2,3,-4,3,-6};
+
+    float body_1[3];
+    quat_apply(true_ref_to_body, ref_1, body_1);
+    float body_2[3];
+    quat_apply(true_ref_to_body, ref_2, body_2);
+    float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
+
+    float guess[4];
+    quest(body, ref, 2, guess);
+
+    if (f_eps_close_matrix(guess, true_body_to_ref, 1, 4, 1e-4)) {
+        printf("QuEST Test Passed\n");
+        print(guess, 1, 4);
+        print(true_body_to_ref, 1, 4);
+    } else {
+        printf("QuEST Test Failed\n");
+        print(guess, 1, 4);
+        print(true_body_to_ref, 1, 4);
+    }
+
+}
 void test_matrix_product(void) {
 
     printf("----- testing matrix product -----\n");

@@ -32,3 +32,19 @@ float min_arr(float* A, int elements){
         return min_found;
     }
 }
+/*Trace*/
+float trace(float* A, int sz){
+    float n= 0;
+    for(int i = 0; i<sz; i++){
+        n += A[i * sz + i];
+    }
+    return n;
+}
+/*L2Norm*/
+float l2_norm(float* A, int n){
+    float x = 0;
+    for (int i = 0; i<n; i++){
+        x += pow(A[i], 2);
+    }
+    return sqrtf(x);
+}
