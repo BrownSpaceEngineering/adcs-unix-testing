@@ -42,7 +42,6 @@ void get_sigma_points(float lam, float* state, float* P, float* sigmas){
     ensure_psd(P1, STATE_SIZE);
     float U[STATE_SIZE * STATE_SIZE];
     chol(P1, U, STATE_SIZE);
-    tran(U, STATE_SIZE, STATE_SIZE);
 
     for(int i = 0; i<STATE_SIZE; i++){
         sigmas[i] = state[i];
@@ -321,7 +320,7 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
     add(P_zz, R, P_vv, MSMT_SIZE, MSMT_SIZE, MSMT_SIZE);
     float P_vv_inv[MSMT_SIZE * MSMT_SIZE];
     memcpy(P_vv_inv, P_vv, sizeof(float) * MSMT_SIZE * MSMT_SIZE);
-    pinv(P_vv_inv, MSMT_SIZE, MSMT_SIZE);
+    inv(P_vv_inv, MSMT_SIZE);
 
     float k[STATE_SIZE * MSMT_SIZE];
     mul(P_xz, P_vv_inv, false, k, STATE_SIZE, MSMT_SIZE, MSMT_SIZE);

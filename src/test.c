@@ -4,11 +4,26 @@
 #include "stdlib.h"
 #include "include/iterate.h"
 #include "include/quest.h"
+#include "include/laextension.h"
+
+static float uniform_01(void) {
+    return ((float) rand() + 1.0f) / ((float) RAND_MAX + 2.0f);
+}
+
+static float normal_sample(float mean, float stddev) {
+    float u1 = uniform_01();
+    float u2 = uniform_01();
+    float mag = sqrtf(-2.0f * logf(u1));
+    float z0 = mag * cosf(2.0f * (float) M_PI * u2);
+    return mean + stddev * z0;
+}
+
 // put test function definitions here
 
 void test_run_all(void) { 
-    test_quest();
-    //test_iteration();
+    //test_quest();
+    test_iteration_1vec();
+    //test_iteration_2vec();
 }
 
 void test_quest(void){
@@ -213,20 +228,20 @@ void test_quaternion(void) {
     }
 }
 
-void test_iteration(void){
+void test_iteration_2vec(void){
     float dt = 0.5;
     float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
-    float true_ref_to_body[4];
     quat_norm(true_body_to_ref, true_body_to_ref);
-    quat_inv(true_body_to_ref, true_ref_to_body);
 
-    float current_guess[4] = {0.2812, -0.6998, 0.5497, -0.3592};
+    float current_guess[4];
+    for (int i = 0; i < 4; i++) {
+        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
+    }
     quat_norm(current_guess, current_guess);
 
     float true_omega[3] = {2, 0.5, -1};
-    float true_bias[3] = {1.0, -0.5, 0.01};
+    float true_bias[3] = {0.001f, 0.001f, 0.001f};
     scale(true_omega, M_PI/180.0f, 1, 3);
-    scale(true_bias, M_PI/180.0f, 1, 3);
 
     float gyro_noise = 0.001;
     float msmt_noise = 0.03;
@@ -295,7 +310,7 @@ void test_iteration(void){
             quat_diff(true_body_to_ref, current_guess, current_q_err);
             float current_err[3];
             quat2rotationvec(current_q_err, current_err);
-            printf("Msmt Error: %f\n", (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
+            printf("Estimate Error: %f\n", (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
             printf("Estimated Bias: ");
             float bias[3] = {state[3], state[4], state[5]};
             scale(bias, 180.0f/M_PI, 1, 3);
@@ -303,4 +318,120 @@ void test_iteration(void){
             printf("\n");
         }
     }
+}
+
+void test_iteration_1vec(void){
+    float dt = 0.5;
+    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
+    float true_ref_to_body[4];
+    quat_norm(true_body_to_ref, true_body_to_ref);
+    quat_inv(true_body_to_ref, true_ref_to_body);
+
+    float current_guess[4] = {0.28, -0.76, 0.5, -0.36};
+    quat_norm(current_guess, current_guess);
+
+    float true_omega[3] = {2, 0.5, -0.5};
+    float true_bias[3] = {0.001f, 0.001f, 0.001f};
+    scale(true_omega, M_PI/180.0f, 1, 3);
+
+    float gyro_noise = 0.001;
+    float msmt_noise = 0.03;
+
+    float state[6] = {0,0,0,0,0,0};
+    float cov[36];
+    float Q[36];
+    float R[36];
+    eye(cov, 6, 6);
+    scale(cov, 0.1, 6, 6);
+    memset(R, 0, sizeof(float) * 36);
+    R[0] = 0.03f;
+    R[7] = 0.03f;
+    R[14] = 0.03f;
+    R[21] = 1.0f;
+    R[28] = 1.0f;
+    R[35] = 1.0f;
+    eye(Q, 6, 6);
+    scale(Q, 0.01, 6, 6);
+
+    float ref[3] = {40, -40, 30};
+    float last_ref[3] = {40, -40, 30};
+    float last_body[3];
+    quat_apply(true_ref_to_body, last_ref, last_body);
+
+    for(int iter = 0; iter < 1000; iter++){
+        float simulated_gyro_measurement[3];
+        for(int i = 0; i<3; i++){
+            simulated_gyro_measurement[i] = true_omega[i] + normal_sample(true_bias[i], gyro_noise);
+        }
+        
+        float delta_vec[3];
+        memcpy(delta_vec, true_omega, sizeof(float) * 3);
+        scale(delta_vec, dt, 1, 3);
+
+        float delta_q[4];
+        rotationvec2quat(delta_vec, delta_q);
+
+        float new_true_body_to_ref[4];
+        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
+        quat_norm(new_true_body_to_ref, true_body_to_ref);
+        float new_ref_to_body[4];
+        quat_inv(true_body_to_ref, new_ref_to_body);
+
+        float d_ref[3];
+        for(int i = 0; i<3; i++){
+            d_ref[i] = (ref[i] - last_ref[i]) / dt;
+        }
+        float body[3];
+        quat_apply(new_ref_to_body, ref, body);
+        for(int i = 0; i<3; i++){
+            body[i] = body[i] + normal_sample(0.0f, msmt_noise);
+        }
+        float d_body[3];
+        float c_prod[3];
+        cross(simulated_gyro_measurement, body, c_prod);
+        for(int i = 0; i<3; i++){
+            d_body[i] = (body[i] - last_body[i]) / dt + c_prod[i];
+        }
+        float ref_norm = l2_norm(ref, 3);
+        float body_norm = l2_norm(body, 3);
+        float body_full[6] = {body[0], body[1], body[2], d_body[0], d_body[1], d_body[2]};
+        float reference[6] = {ref[0], ref[1], ref[2], d_ref[0], d_ref[1], d_ref[2]};
+
+        float new_error_state[6];
+        float new_quat[4];
+        float new_P[36];
+        iterate(state, current_guess, cov, body_full, reference, simulated_gyro_measurement, Q, R, dt, new_error_state, new_quat, new_P);
+
+        new_error_state[0] = 0;
+        new_error_state[1] = 0;
+        new_error_state[2] = 0;
+        new_error_state[3] = 0;
+        new_error_state[4] = 0;
+        new_error_state[5] = 0;
+
+        memcpy(state, new_error_state, sizeof(float) * 6);
+        memcpy(cov, new_P, sizeof(float) * 36);
+        memcpy(current_guess, new_quat, sizeof(float) * 4);
+        quat_norm(current_guess, current_guess);
+        if(iter % 50 == 0){
+            float current_q_err[4];
+            quat_diff(true_body_to_ref, current_guess, current_q_err);
+            float current_err[3];
+            quat2rotationvec(current_q_err, current_err);
+            printf("Msmt Error: %f\n", (180.0f / M_PI) * (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
+            printf("Estimated Bias: ");
+            float bias[3] = {state[3], state[4], state[5]};
+            scale(bias, 180.0f/M_PI, 1, 3);
+            print(bias, 1, 3);
+            printf("\n");
+        }
+        memcpy(last_body, body, sizeof(float) * 3);
+        memcpy(last_ref, ref, sizeof(float) * 3);
+
+        //THE IMPORTANT PART: REF NEEDS TO CHANGE A DECENT AMT
+        for(int i = 0; i<3; i++){
+            ref[i] = ref[i] + normal_sample(0.0f, 0.1f);
+        }
+    }
+    
 }
