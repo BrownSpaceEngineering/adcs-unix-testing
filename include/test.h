@@ -5,6 +5,5 @@
 void test_run_all(void);
 void test_matrix_product(void);
 void test_quaternion(void);
-void test_ecef_2_eci(void);
-void test_sun_vec(void);
+void test_iteration(void);
 #endif

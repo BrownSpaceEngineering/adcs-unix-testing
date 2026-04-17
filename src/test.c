@@ -2,9 +2,12 @@
 #include "declareFunctions.h"
 #include "include/quat.h"
 #include "stdlib.h"
+#include "include/iterate.h"
 // put test function definitions here
 
-void test_run_all(void) { test_matrix_product(); }
+void test_run_all(void) { 
+    test_iteration();
+}
 
 void test_matrix_product(void) {
 
@@ -177,5 +180,97 @@ void test_quaternion(void) {
     } else {
         printf("Quat Apply Test Failed\n");
         printf("Got: %f, %f, %f\n", res_vec[0], res_vec[1], res_vec[2]);
+    }
+}
+
+void test_iteration(void){
+    float dt = 0.5;
+    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
+    float true_ref_to_body[4];
+    quat_norm(true_body_to_ref, true_body_to_ref);
+    quat_inv(true_body_to_ref, true_ref_to_body);
+
+    float current_guess[4] = {0.2812, -0.6998, 0.5497, -0.3592};
+    quat_norm(current_guess, current_guess);
+
+    float true_omega[3] = {2, 0.5, -1};
+    float true_bias[3] = {1.0, -0.5, 0.01};
+    scale(true_omega, M_PI/180.0f, 1, 3);
+    scale(true_bias, M_PI/180.0f, 1, 3);
+
+    float gyro_noise = 0.001;
+    float msmt_noise = 0.03;
+
+    float state[6] = {0,0,0,0,0,0};
+    float cov[36];
+    float Q[36];
+    float R[36];
+    eye(cov, 6, 6);
+    scale(cov, 0.1, 6, 6);
+    eye(R, 6, 6);
+    scale(R, 0.1, 6, 6);
+    eye(Q, 6, 6);
+    scale(Q, 0.01, 6, 6);
+
+    float ref[6] = {40, 0, 0, 0, 40, 0};
+    float ref_1[3] = {40,0,0};
+    float ref_2[3] = {0,40,0};
+
+    for(int iter = 0; iter < 1000; iter++){
+        float simulated_gyro_measurement[3];
+        for(int i = 0; i<3; i++){
+            float uniform_noise = (2.0f * ((float) rand() / (float) RAND_MAX)) - 1.0f;
+            simulated_gyro_measurement[i] = true_omega[i] + true_bias[i] + uniform_noise * gyro_noise;
+        }
+        
+        float delta_vec[3];
+        memcpy(delta_vec, true_omega, sizeof(float) * 3);
+        scale(delta_vec, dt, 1, 3);
+
+        float delta_q[4];
+        rotationvec2quat(delta_vec, delta_q);
+
+        float new_true_body_to_ref[4];
+        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
+        quat_norm(new_true_body_to_ref, true_body_to_ref);
+        float new_ref_to_body[4];
+        quat_inv(true_body_to_ref, new_ref_to_body);
+
+        
+        float body_1[3];
+        float body_2[3];
+        quat_apply(new_ref_to_body, ref_1, body_1);
+        quat_apply(new_ref_to_body, ref_2, body_2);
+        float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
+        for(int i = 0; i<6; i++){
+            float uniform_noise = (2.0f * ((float) rand() / (float) RAND_MAX)) - 1.0f;
+            body[i] = body[i] + uniform_noise * msmt_noise;
+        }
+
+        float new_error_state[6];
+        float new_quat[4];
+        float new_P[36];
+        iterate(state, current_guess, cov, body, ref, simulated_gyro_measurement, Q, R, dt, new_error_state, new_quat, new_P);
+
+        new_error_state[0] = 0;
+        new_error_state[1] = 0;
+        new_error_state[2] = 0;
+
+        memcpy(state, new_error_state, sizeof(float) * 6);
+        memcpy(cov, new_P, sizeof(float) * 36);
+        memcpy(current_guess, new_quat, sizeof(float) * 4);
+        quat_norm(current_guess, current_guess);
+        if(iter % 50 == 0){
+            float current_q_err[4];
+            quat_diff(true_body_to_ref, current_guess, current_q_err);
+            float current_err[3];
+            quat2rotationvec(current_q_err, current_err);
+            printf("Msmt Error: %f\n", (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
+            printf("Estimated Bias: ");
+            float bias[3] = {state[3], state[4], state[5]};
+            scale(bias, 180.0f/M_PI, 1, 3);
+            print(bias, 1, 3);
+            printf("\n");
+        }
     }
 }
