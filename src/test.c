@@ -327,7 +327,10 @@ void test_iteration_1vec(void){
     quat_norm(true_body_to_ref, true_body_to_ref);
     quat_inv(true_body_to_ref, true_ref_to_body);
 
-    float current_guess[4] = {0.28, -0.76, 0.5, -0.36};
+    float current_guess[4];
+    for (int i = 0; i < 4; i++) {
+        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
+    }
     quat_norm(current_guess, current_guess);
 
     float true_omega[3] = {2, 0.5, -0.5};
