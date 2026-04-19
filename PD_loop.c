@@ -38,20 +38,7 @@ void error_axis_angle(
     quat_inv(q_current, q_inv);
     quat_multiply(q_want, q_inv, q_error);
 
-    float angle = 2.0 * acos(q_error[0]);
-
-    float s = sin(angle/2.0);
-
-    float axis[3];
-
-    axis[0] = q_error[1] / s;
-    axis[1] = q_error[2] / s;
-    axis[2] = q_error[3] / s;
-
-    e[0] = axis[0];
-    e[1] = axis[1];
-    e[2] = axis[2];
-    e[3] = angle;
+    quat2rotationvec(q_error, e);
 }
 
 /* == Main Loop == */
