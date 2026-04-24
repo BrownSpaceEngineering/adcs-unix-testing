@@ -112,3 +112,82 @@ void quat2rotationvec(float* q, float* resulting_vec) {
     resulting_vec[1] = theta * q[2] / sqrtf(1 - pow(q[0], 2));
     resulting_vec[2] = theta * q[3] / sqrtf(1 - pow(q[0], 2));
 }
+void quat2rotm(float* q, float* rotm){
+    float qw = q[0];
+    float qx = q[1];
+    float qy = q[2];
+    float qz = q[3];
+
+    // Precompute repeated terms
+    float qw2 = qw * qw;
+    float qx2 = qx * qx;
+    float qy2 = qy * qy;
+    float qz2 = qz * qz;
+
+    float qxqy = qx * qy;
+    float qxqz = qx * qz;
+    float qyqz = qy * qz;
+    float qwqx = qw * qx;
+    float qwqy = qw * qy;
+    float qwqz = qw * qz;
+
+    // Row-major 3x3 rotation matrix
+    rotm[0] = 1.0f - 2.0f * (qy2 + qz2);
+    rotm[1] = 2.0f * (qxqy - qwqz);
+    rotm[2] = 2.0f * (qxqz + qwqy);
+
+    rotm[3] = 2.0f * (qxqy + qwqz);
+    rotm[4] = 1.0f - 2.0f * (qx2 + qz2);
+    rotm[5] = 2.0f * (qyqz - qwqx);
+
+    rotm[6] = 2.0f * (qxqz - qwqy);
+    rotm[7] = 2.0f * (qyqz + qwqx);
+    rotm[8] = 1.0f - 2.0f * (qx2 + qy2);
+}
+void rotm_to_quat(float *R, float *q)
+{
+    float trace = R[0] + R[4] + R[8];
+
+    if (trace > 0.0f)
+    {
+        float s = sqrtf(trace + 1.0f) * 2.0f; // s = 4*qw
+        q[0] = 0.25f * s;
+        q[1] = (R[7] - R[5]) / s;
+        q[2] = (R[2] - R[6]) / s;
+        q[3] = (R[3] - R[1]) / s;
+    }
+    else if ((R[0] > R[4]) && (R[0] > R[8]))
+    {
+        float s = sqrtf(1.0f + R[0] - R[4] - R[8]) * 2.0f; // s = 4*qx
+        q[0] = (R[7] - R[5]) / s;
+        q[1] = 0.25f * s;
+        q[2] = (R[1] + R[3]) / s;
+        q[3] = (R[2] + R[6]) / s;
+    }
+    else if (R[4] > R[8])
+    {
+        float s = sqrtf(1.0f + R[4] - R[0] - R[8]) * 2.0f; // s = 4*qy
+        q[0] = (R[2] - R[6]) / s;
+        q[1] = (R[1] + R[3]) / s;
+        q[2] = 0.25f * s;
+        q[3] = (R[5] + R[7]) / s;
+    }
+    else
+    {
+        float s = sqrtf(1.0f + R[8] - R[0] - R[4]) * 2.0f; // s = 4*qz
+        q[0] = (R[3] - R[1]) / s;
+        q[1] = (R[2] + R[6]) / s;
+        q[2] = (R[5] + R[7]) / s;
+        q[3] = 0.25f * s;
+    }
+
+    // Optional: normalize to protect against numerical drift
+    float norm = sqrtf(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]);
+    if (norm > 0.0f)
+    {
+        q[0] /= norm;
+        q[1] /= norm;
+        q[2] /= norm;
+        q[3] /= norm;
+    }
+}

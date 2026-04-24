@@ -1,6 +1,8 @@
 #include "include/orbital2eci.h"
 #include "include/quat.h"
 
+#include "math.h"
+
 void orbitalToECI(float* kepler6, float* eci){
     // % Converts the 6 orbital elements into ECI position vector
     // % 

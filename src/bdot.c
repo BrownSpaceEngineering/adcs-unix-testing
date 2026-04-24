@@ -1,4 +1,5 @@
 #include "include/bdot.h"
+#include "string.h"
 
 void Bdot(float* M_T, float* M_TMINUS1, float dT, float* moments){
     float kx = 1;//Adjustable

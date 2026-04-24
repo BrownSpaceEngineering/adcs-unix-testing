@@ -11,5 +11,6 @@ void quat_apply(float* q, float* vec, float* resulting_vec);
 void quat_diff(float* from_q, float* to_q, float* resulting_quat);
 void rotationvec2quat(float* vec, float* resulting_quat);
 void quat2rotationvec(float* q, float* resulting_vec);
-
+void quat2rotm(float* q, float* rotm);
+void rotm_to_quat(float *R, float *q);
 #endif
