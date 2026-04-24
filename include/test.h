@@ -5,5 +5,7 @@
 void test_run_all(void);
 void test_matrix_product(void);
 void test_quaternion(void);
-void test_photodiode_sun_vector(void);
+void test_iteration_1vec(void);
+void test_iteration_2vec(void);
+void test_quest(void);
 #endif

@@ -7,7 +7,7 @@ const int NUM_SELECTED_DIODES = 5;
 
 
 const float MAX_READING = 1.7f;
-
+const float MIN_READING = 0.17f;
 const float PHOTODIODES[18][3] = {
     {  0.8660254f,  -0.27968387f, -0.41445981f },
     { -0.8660254f,   0.27968387f,  0.41445981f },
@@ -39,8 +39,9 @@ const float PHOTODIODES[18][3] = {
 
 // Assumes photodiode_readings are passed in the same order as PHOTODIODES.
 // Pairs are 0-1, 2-3, ..., 16-17.
-void get_vec_from_photodiode_readings(float photodiode_readings[],
-                                      float estimated_sun_vector[]) {
+bool get_vec_from_photodiode_readings(float* photodiode_readings,
+                                      float* estimated_sun_vector) {
+    int valid_readings = 0;
     int selected_indices[NUM_SELECTED_DIODES];
     float selected_readings[NUM_SELECTED_DIODES];
 
@@ -66,6 +67,10 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
             brighter_reading = photodiode_readings[i1];
         }
 
+        if(brighter_reading > MIN_READING){
+            valid_readings += 1;
+        }
+
         int min_pos = 0;
         for (int i = 1; i < NUM_SELECTED_DIODES; i++) {
             if (selected_readings[i] < selected_readings[min_pos]) {
@@ -77,6 +82,10 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
             selected_readings[min_pos] = brighter_reading;
             selected_indices[min_pos] = brighter_index;
         }
+    }
+
+    if(valid_readings < 3){
+        return false;
     }
 
     // Construct system of equations
@@ -114,4 +123,6 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
     estimated_sun_vector[0] /= mag;
     estimated_sun_vector[1] /= mag;
     estimated_sun_vector[2] /= mag;
+
+    return true;
 }
