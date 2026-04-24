@@ -2,9 +2,14 @@
 #include "declareFunctions.h"
 #include "include/quat.h"
 #include "stdlib.h"
+#include "include/photodiode_determination.h"
+
 // put test function definitions here
 
-void test_run_all(void) { test_matrix_product(); }
+void test_run_all(void) { test_matrix_product();
+test_quaternion(); 
+test_photodiode_sun_vector();}
+
 
 void test_matrix_product(void) {
 
@@ -177,5 +182,162 @@ void test_quaternion(void) {
     } else {
         printf("Quat Apply Test Failed\n");
         printf("Got: %f, %f, %f\n", res_vec[0], res_vec[1], res_vec[2]);
+    }
+}
+
+void test_photodiode_sun_vector(void) {
+    float readings[18] = {0.0f};
+    float estimated_sun_vector[3] = {0.0f};
+
+    /*
+     * Test 1:
+     * Sun is exactly in the direction of diode 0.
+    */
+    float true_sun_1[3] = {
+        0.8660254f,
+       -0.27968387f,
+       -0.41445981f
+    };
+
+    for (int i = 0; i < 18; i++) {
+        float dot_prod =
+            PHOTODIODES[i][0] * true_sun_1[0] +
+            PHOTODIODES[i][1] * true_sun_1[1] +
+            PHOTODIODES[i][2] * true_sun_1[2];
+
+        if (dot_prod > 0.0f) {
+            readings[i] = MAX_READING * dot_prod;
+        } else {
+            readings[i] = 0.0f;
+        }
+    }
+
+    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+
+    if (f_eps_close_matrix(estimated_sun_vector, true_sun_1, 1, 3, 1e-3f)) {
+        printf("Photodiode Exact Diode Direction Test Passed\n");
+    } else {
+        printf("Photodiode Exact Diode Direction Test Failed\n");
+        printf("Expected: %f, %f, %f\n", true_sun_1[0], true_sun_1[1], true_sun_1[2]);
+        printf("Got:      %f, %f, %f\n",
+               estimated_sun_vector[0],
+               estimated_sun_vector[1],
+               estimated_sun_vector[2]);
+    }
+
+    /*
+     * Test 2:
+     * Sun points in +Z direction.
+     */
+    float true_sun_2[3] = {0.0f, 0.0f, 1.0f};
+
+    for (int i = 0; i < 18; i++) {
+        float dot_prod =
+            PHOTODIODES[i][0] * true_sun_2[0] +
+            PHOTODIODES[i][1] * true_sun_2[1] +
+            PHOTODIODES[i][2] * true_sun_2[2];
+
+        if (dot_prod > 0.0f) {
+            readings[i] = MAX_READING * dot_prod;
+        } else {
+            readings[i] = 0.0f;
+        }
+    }
+
+    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+
+    if (f_eps_close_matrix(estimated_sun_vector, true_sun_2, 1, 3, 1e-3f)) {
+        printf("Photodiode +Z Direction Test Passed\n");
+    } else {
+        printf("Photodiode +Z Direction Test Failed\n");
+        printf("Expected: %f, %f, %f\n", true_sun_2[0], true_sun_2[1], true_sun_2[2]);
+        printf("Got:      %f, %f, %f\n",
+               estimated_sun_vector[0],
+               estimated_sun_vector[1],
+               estimated_sun_vector[2]);
+    }
+
+    /*
+     * Test 3:
+     * Sun points in +X direction.
+     */
+    float true_sun_3[3] = {1.0f, 0.0f, 0.0f};
+
+    for (int i = 0; i < 18; i++) {
+        float dot_prod =
+            PHOTODIODES[i][0] * true_sun_3[0] +
+            PHOTODIODES[i][1] * true_sun_3[1] +
+            PHOTODIODES[i][2] * true_sun_3[2];
+
+        readings[i] = (dot_prod > 0.0f) ? MAX_READING * dot_prod : 0.0f;
+    }
+
+    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+
+    if (f_eps_close_matrix(estimated_sun_vector, true_sun_3, 1, 3, 1e-3f)) {
+        printf("Photodiode +X Direction Test Passed\n");
+    } else {
+        printf("Photodiode +X Direction Test Failed\n");
+        printf("Expected: %f, %f, %f\n", true_sun_3[0], true_sun_3[1], true_sun_3[2]);
+        printf("Got:      %f, %f, %f\n",
+               estimated_sun_vector[0],
+               estimated_sun_vector[1],
+               estimated_sun_vector[2]);
+    }
+
+    /*
+     * Test 4:
+     * Sun points in +Y direction.
+     */
+    float true_sun_4[3] = {0.0f, 1.0f, 0.0f};
+
+    for (int i = 0; i < 18; i++) {
+        float dot_prod =
+            PHOTODIODES[i][0] * true_sun_4[0] +
+            PHOTODIODES[i][1] * true_sun_4[1] +
+            PHOTODIODES[i][2] * true_sun_4[2];
+
+        readings[i] = (dot_prod > 0.0f) ? MAX_READING * dot_prod : 0.0f;
+    }
+
+    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+
+    if (f_eps_close_matrix(estimated_sun_vector, true_sun_4, 1, 3, 1e-3f)) {
+        printf("Photodiode +Y Direction Test Passed\n");
+    } else {
+        printf("Photodiode +Y Direction Test Failed\n");
+        printf("Expected: %f, %f, %f\n", true_sun_4[0], true_sun_4[1], true_sun_4[2]);
+        printf("Got:      %f, %f, %f\n",
+               estimated_sun_vector[0],
+               estimated_sun_vector[1],
+               estimated_sun_vector[2]);
+    }
+
+    /*
+     * Test 5:
+     * Sun points in a normalized arbitrary direction.
+     */
+    float true_sun_5[3] = {0.57735027f, 0.57735027f, 0.57735027f};
+
+    for (int i = 0; i < 18; i++) {
+        float dot_prod =
+            PHOTODIODES[i][0] * true_sun_5[0] +
+            PHOTODIODES[i][1] * true_sun_5[1] +
+            PHOTODIODES[i][2] * true_sun_5[2];
+
+        readings[i] = (dot_prod > 0.0f) ? MAX_READING * dot_prod : 0.0f;
+    }
+
+    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+
+    if (f_eps_close_matrix(estimated_sun_vector, true_sun_5, 1, 3, 1e-3f)) {
+        printf("Photodiode Arbitrary Direction Test Passed\n");
+    } else {
+        printf("Photodiode Arbitrary Direction Test Failed\n");
+        printf("Expected: %f, %f, %f\n", true_sun_5[0], true_sun_5[1], true_sun_5[2]);
+        printf("Got:      %f, %f, %f\n",
+               estimated_sun_vector[0],
+               estimated_sun_vector[1],
+               estimated_sun_vector[2]);
     }
 }
