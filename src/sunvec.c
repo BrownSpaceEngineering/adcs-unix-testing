@@ -1,4 +1,4 @@
-#include "include/sunvec.h"
+#include "sunvec.h"
 #include <math.h>
 #include <string.h>
 float sind(float in){

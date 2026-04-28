@@ -1,5 +1,7 @@
-#include "include/quat.h"
+#include "quat.h"
 #include "math.h"
+#include "declareFunctions.h"
+#include "eps.h"
 #include <string.h>
 
 /*Applies the Hamilton product*/
@@ -102,7 +104,7 @@ void quat2rotationvec(float* q, float* resulting_vec) {
     }
     
     float theta = 2 * acos(q[0]);
-    if (theta == 0) {
+    if (f_eps_close_default(theta, 0.0f)) {
         resulting_vec[0] = 0;
         resulting_vec[1] = 0;
         resulting_vec[2] = 0;

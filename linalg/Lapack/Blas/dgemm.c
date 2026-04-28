@@ -219,14 +219,14 @@
 
     /*     Quick return if possible. */
 
-    if (*m == 0 || *n == 0 || (*alpha == 0. || *k == 0) && *beta == 1.) {
+    if (*m == 0 || *n == 0 || (f_eps_close_default(*alpha, 0.) || *k == 0) && f_eps_close_default(*beta, 1.)) {
         return 0;
     }
 
     /*     And if  alpha.eq.zero. */
 
-    if (*alpha == 0.) {
-        if (*beta == 0.) {
+    if (f_eps_close_default(*alpha, 0.)) {
+        if (f_eps_close_default(*beta, 0.)) {
             i__1 = *n;
             for (j = 1; j <= i__1; ++j) {
                 i__2 = *m;
@@ -259,13 +259,13 @@
 
             i__1 = *n;
             for (j = 1; j <= i__1; ++j) {
-                if (*beta == 0.) {
+                if (f_eps_close_default(*beta, 0.)) {
                     i__2 = *m;
                     for (i__ = 1; i__ <= i__2; ++i__) {
                         c__[i__ + j * c_dim1] = 0.;
                         /* L50: */
                     }
-                } else if (*beta != 1.) {
+                } else if (!f_eps_close_default(*beta, 1.)) {
                     i__2 = *m;
                     for (i__ = 1; i__ <= i__2; ++i__) {
                         c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1];
@@ -274,7 +274,7 @@
                 }
                 i__2 = *k;
                 for (l = 1; l <= i__2; ++l) {
-                    if (b[l + j * b_dim1] != 0.) {
+                    if (!f_eps_close_default(b[l + j * b_dim1], 0.)) {
                         temp = *alpha * b[l + j * b_dim1];
                         i__3 = *m;
                         for (i__ = 1; i__ <= i__3; ++i__) {
@@ -300,7 +300,7 @@
                         temp += a[l + i__ * a_dim1] * b[l + j * b_dim1];
                         /* L100: */
                     }
-                    if (*beta == 0.) {
+                    if (f_eps_close_default(*beta, 0.)) {
                         c__[i__ + j * c_dim1] = *alpha * temp;
                     } else {
                         c__[i__ + j * c_dim1] = *alpha * temp + *beta * c__[i__ + j * c_dim1];
@@ -317,7 +317,7 @@
 
             i__1 = *n;
             for (j = 1; j <= i__1; ++j) {
-                if (*beta == 0.) {
+                if (f_eps_close_default(*beta, 0.)) {
                     i__2 = *m;
                     for (i__ = 1; i__ <= i__2; ++i__) {
                         c__[i__ + j * c_dim1] = 0.;
@@ -358,7 +358,7 @@
                         temp += a[l + i__ * a_dim1] * b[j + l * b_dim1];
                         /* L180: */
                     }
-                    if (*beta == 0.) {
+                    if (f_eps_close_default(*beta, 0.)) {
                         c__[i__ + j * c_dim1] = *alpha * temp;
                     } else {
                         c__[i__ + j * c_dim1] = *alpha * temp + *beta * c__[i__ + j * c_dim1];

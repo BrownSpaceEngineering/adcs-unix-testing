@@ -9,10 +9,11 @@
 
                 http://www.netlib.org/f2c/libf2c.zip
 */
+#include "clapack.h"
+#include "f2c.h"
 
-#include "../../Lapack/Include/f2c.h"
-
-/* Subroutine */ int dgesv_(integer* n, integer* nrhs, floatreal* a, integer* lda, integer* ipiv,
+/* Subroutine */ 
+int dgesv_(integer* n, integer* nrhs, floatreal* a, integer* lda, integer* ipiv,
                             floatreal* b, integer* ldb, integer* info) {
     /* System generated locals */
     integer a_dim1, a_offset, b_dim1, b_offset, i__1;

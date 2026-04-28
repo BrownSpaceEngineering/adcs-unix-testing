@@ -16,7 +16,7 @@
  *
  * gcc -O2 -Wall -Wextra -o magnetosphere_update_test magnetosphere_update.c -lm
  */
-#include "include/magnetosphere.h"
+#include "magnetosphere.h"
 #include <stdint.h>
 #include <math.h>
 #include <stdio.h>

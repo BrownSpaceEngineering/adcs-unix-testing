@@ -1,7 +1,7 @@
-#include "include/bdot.h"
+#include "bdot.h"
 #include "string.h"
 
-void Bdot(float* M_T, float* M_TMINUS1, float dT, float* moments){
+void bdot(float* M_T, float* M_TMINUS1, float dT, float* moments){
     float kx = 1;//Adjustable
     float ky = 1;
     float kz = 1;

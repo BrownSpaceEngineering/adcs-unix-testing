@@ -1,6 +1,6 @@
-#include "include/torque2moments.h"
+#include "torque2moments.h"
 #include "declareFunctions.h"
-#include "include/laextension.h"
+#include "laextension.h"
 void torque_2_moments(float* B, float* torques, float* moments){
     float Bxt[3] = {0,0,0};
     cross(B, torques, Bxt);

@@ -1,5 +1,5 @@
-#include "include/orbital2eci.h"
-#include "include/quat.h"
+#include "orbital2eci.h"
+#include "quat.h"
 
 #include "math.h"
 

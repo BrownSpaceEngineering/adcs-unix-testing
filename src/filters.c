@@ -1,4 +1,4 @@
-#include "include/filters.h"
+#include "filters.h"
 #include "math.h"
 void gaussian_smooth_1d(float* src, float* dst, int n, float sigma) {
     int radius = (int)(3.0 * sigma + 0.5);

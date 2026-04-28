@@ -1,8 +1,9 @@
-#include "include/iterate.h"
-#include "include/laextension.h"
+#include "iterate.h"
+#include "laextension.h"
 #include "declareFunctions.h"
 #include "math.h"
-#include "include/quat.h"
+#include "quat.h"
+#include <string.h>
 
 void ensure_psd(float* mat, int size) {
     float eps = 1e-6; // Adjust this if necessary (MATLAB used 1e-7)
@@ -200,7 +201,21 @@ void grad_descent(float* propagated_quats, float* current_quat, float* avg_quat,
 }
 
 
-void iterate(float* error_state, float* quat_state, float* cov, float* body, float* ref, float* gyro, float* Q, float* R, float dt, float* new_err_state, float* new_quat_state, float* new_P){
+
+void iterate(
+    float* error_state, 
+    float* quat_state, 
+    float* cov, 
+    float* body, 
+    float* ref, 
+    float* gyro, 
+    const float* Q, 
+    const float* R, 
+    float dt, 
+    float* new_err_state, 
+    float* new_quat_state, 
+    float* new_P){
+    
     float P[STATE_SIZE * STATE_SIZE];
     memcpy(P, cov, sizeof(float) * STATE_SIZE * STATE_SIZE);
     
@@ -208,7 +223,7 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
 
     float lambda = calculate_lambda(STATE_SIZE, ALPHA);
     float P_Q[STATE_SIZE * STATE_SIZE];
-    add(P, Q, P_Q, STATE_SIZE, STATE_SIZE, STATE_SIZE);
+    add(P, (float*)Q, P_Q, STATE_SIZE, STATE_SIZE, STATE_SIZE);
     float error_sigmas[STATE_SIZE * NUM_SIGMAS];
     get_sigma_points(lambda, error_state, P_Q, error_sigmas);
     float quat_sigmas[(STATE_SIZE + 1) * NUM_SIGMAS];
@@ -264,9 +279,14 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
         mean_msmt[col] = var_mean;
     }
 
-    float P_hat[STATE_SIZE * STATE_SIZE] = {0};
+    float P_hat[STATE_SIZE * STATE_SIZE]; 
+    // init P_hat to 0 before the loop, since we're doing a sum into it
+    zeros(P_hat, STATE_SIZE, STATE_SIZE); 
+
     for(int i = 0; i< NUM_SIGMAS; i++){
-        float err[STATE_SIZE] = {0};
+        float err[STATE_SIZE];
+        zeros(err, 1, STATE_SIZE);
+
         for(int j = 0; j< STATE_SIZE; j++){
             err[j] = propagated_errors[i * STATE_SIZE + j] - mean_err[j];
         }
@@ -280,14 +300,18 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
         memcpy(P_hat, new_P_hat, sizeof(float) * STATE_SIZE * STATE_SIZE);
     }
 
-    float P_xz[STATE_SIZE * MSMT_SIZE] = {0};
+    float P_xz[STATE_SIZE * MSMT_SIZE];
+    zeros(P_xz, STATE_SIZE, MSMT_SIZE);
+
     for(int i = 0; i<NUM_SIGMAS; i++){
-        float errT[STATE_SIZE] = {0};
+        float errT[STATE_SIZE];
+        zeros(errT, 1, STATE_SIZE);
         for(int j = 0; j< STATE_SIZE; j++){
             errT[j] = propagated_errors[i * STATE_SIZE + j] - mean_err[j];
         }
 
-        float msmt_err[MSMT_SIZE] = {0};
+        float msmt_err[MSMT_SIZE];
+        zeros(msmt_err, 1, MSMT_SIZE);
         for(int j = 0; j<MSMT_SIZE; j++){
             msmt_err[j] = sigma_msmts[i * MSMT_SIZE + j] - mean_msmt[j];
         }
@@ -300,13 +324,16 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
         memcpy(P_xz, new_P_xz, sizeof(float) * STATE_SIZE * MSMT_SIZE);
     }
 
-    float P_zz[MSMT_SIZE * MSMT_SIZE] = {0};
+    float P_zz[MSMT_SIZE * MSMT_SIZE];
+    zeros(P_zz, STATE_SIZE, MSMT_SIZE);
     for(int i = 0; i< NUM_SIGMAS; i++){
-        float msmt_err[MSMT_SIZE] = {0};
+        float msmt_err[MSMT_SIZE];
+        zeros(msmt_err, 1, MSMT_SIZE);
         for(int j = 0; j<MSMT_SIZE; j++){
             msmt_err[j] = sigma_msmts[i * MSMT_SIZE + j] - mean_msmt[j];
         }
         float msmtT[MSMT_SIZE];
+        zeros(msmt_err, 1, MSMT_SIZE);
         memcpy(msmtT, msmt_err, sizeof(float) * MSMT_SIZE);
         float msmtTmsmt[MSMT_SIZE * MSMT_SIZE];
         mul(msmtT, msmt_err, false, msmtTmsmt, MSMT_SIZE, 1, MSMT_SIZE);
@@ -317,7 +344,7 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
     }
     
     float P_vv[MSMT_SIZE * MSMT_SIZE];
-    add(P_zz, R, P_vv, MSMT_SIZE, MSMT_SIZE, MSMT_SIZE);
+    add(P_zz, (float*)R, P_vv, MSMT_SIZE, MSMT_SIZE, MSMT_SIZE);
     float P_vv_inv[MSMT_SIZE * MSMT_SIZE];
     memcpy(P_vv_inv, P_vv, sizeof(float) * MSMT_SIZE * MSMT_SIZE);
     inv(P_vv_inv, MSMT_SIZE);

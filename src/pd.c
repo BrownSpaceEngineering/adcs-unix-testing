@@ -1,4 +1,4 @@
-#include "include/pd.h"
+#include "pd.h"
 
 void PD_loop(float* r_e, float* r_omega, float* tau)
 /* From the error (r_e) in axis-angle form, the angular velocity (r_omega) in axis-angle form, returns the torque wanted */

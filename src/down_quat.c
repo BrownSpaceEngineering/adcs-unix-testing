@@ -1,6 +1,6 @@
-#include "include/down_quat.h"
-#include "include/laextension.h"
-#include "include/quat.h"
+#include "down_quat.h"
+#include "laextension.h"
+#include "quat.h"
 #include "math.h"
 #define EPS 1e-6f
 static void normalize3(float *v)

@@ -1,3 +1,6 @@
+#include "moments2currents.h"
+#include "declareFunctions.h"
+#include "eps.h"
 #include <math.h>
 
 /**
@@ -44,7 +47,7 @@ void moment2current3axis(float* m, float* Imax, float* I_out)
 
     /* Saturation clamp (only applied when Imax is provided) */
     for (int i = 0; i < 3; i++) {
-        if(Imax[i] == -1){
+        if (f_eps_close_default(Imax[i], -1.0f)) {
             continue;
         }
         else if (I_out[i] >  Imax[i]) {

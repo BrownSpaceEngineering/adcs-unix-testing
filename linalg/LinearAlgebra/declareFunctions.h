@@ -25,7 +25,7 @@
  * Lapack library
  */
 #include "clapack.h"
-#include "linalg/Lapack/Include/f2c.h"
+#include "f2c.h"
 // #include "../../src/Lapack/Include/blaswrap.h" // No need in this project! :)
 // #include "../../src/qpOASES/Header/qpOASES_e.h"
 

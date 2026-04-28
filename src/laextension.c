@@ -1,4 +1,4 @@
-#include "include/laextension.h"
+#include "laextension.h"
 #include "math.h"
 /*Cross Product for 2 1x3 vectors*/
 void cross(float* A, float* B, float* C){

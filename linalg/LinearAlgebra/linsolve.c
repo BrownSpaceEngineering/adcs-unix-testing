@@ -5,8 +5,8 @@
  *      Author: Daniel Mårtensson
  */
 
+#include "clapack.h"
 #include "declareFunctions.h"
-
 /*
  * Solve a Ax=B system by setting A, X, B as float matrix and also row for A, X and B and column_b
  * for X and B. Notice that A need to be a square matrix, so row x row as dimension, but the B

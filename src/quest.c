@@ -1,7 +1,7 @@
-#include "include/quest.h"
+#include "quest.h"
 #include "declareFunctions.h"
 #include "stdlib.h"
-#include "include/laextension.h"
+#include "laextension.h"
 float newton_raphson(float proposed_eigen, float a, float b, float c, float d, float sigma){
     return proposed_eigen - (powf(proposed_eigen, 4) - (a + b) * (proposed_eigen * proposed_eigen) - c * proposed_eigen + (a * b + c * sigma - d)) / (4 * pow(proposed_eigen, 3) - 2 * (a+b) * proposed_eigen - c);
 }

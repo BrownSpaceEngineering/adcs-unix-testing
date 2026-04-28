@@ -1,10 +1,17 @@
-#include "include/test.h"
+#include "adcs_test.h"
 #include "declareFunctions.h"
-#include "include/quat.h"
+#include "eps.h"
+#include "quat.h"
 #include "stdlib.h"
-#include "include/iterate.h"
-#include "include/quest.h"
-#include "include/laextension.h"
+#include "iterate.h"
+#include "quest.h"
+#include "laextension.h"
+
+#if defined (PVDXOS) 
+// if compiling within PVDXos, use RTT logging instead of stdlib printf
+#include "logging.h"
+#define printf test_log
+#endif
 
 static float uniform_01(void) {
     return ((float) rand() + 1.0f) / ((float) RAND_MAX + 2.0f);
@@ -20,7 +27,7 @@ static float normal_sample(float mean, float stddev) {
 
 // put test function definitions here
 
-void test_run_all(void) { 
+void adcs_test_run_all(void) { 
     //test_quest();
     test_iteration_1vec();
     //test_iteration_2vec();

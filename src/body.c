@@ -1,71 +1,79 @@
 
 #include "string.h"
 #include "math.h"
-#include "include/body.h"
-#include "include/laextension.h"
-#include "include/quest.h"
-#include "include/bdot.h"
-#include "include/moments2currents.h"
-#include "include/photodiode_determination.h"
-#include "include/magnetosphere.h"
-#include "include/orbital2eci.h"
-#include "include/sunvec.h"
-#include "include/kepler.h"
-#include "include/iterate.h"
-#include "include/quat.h"
-#include "include/pd.h"
-#include "include/ecef2eci.h"
-#include "include/down_quat.h"
-#include "include/torque2moments.h"
+#include "body.h"
+#include "laextension.h"
+#include "quest.h"
+#include "bdot.h"
+#include "moments2currents.h"
+#include "photodiode_determination.h"
+#include "magnetosphere.h"
+#include "orbital2eci.h"
+#include "sunvec.h"
+#include "kepler.h"
+#include "iterate.h"
+#include "quat.h"
+#include "pd.h"
+#include "ecef2eci.h"
+#include "down_quat.h"
+#include "torque2moments.h"
 #include "declareFunctions.h"
 
-extern float PVD_ECEF[3] = {6.3761e6, -0.1387e6, 0.0807e6};
-extern const float DETUMBLING_GYRO_THRESHOLD = 0.17f;
-extern const float DETUMBLING_MAG_THRESHOLD = 0.01f;
-extern float Imax[3] = {1, 1, 1};//TEMP
-extern const float INIT_P[6 * 6] = {0.01, 0, 0, 0, 0, 0,
+float PVD_ECEF[3] = {6.3761e6, -0.1387e6, 0.0807e6};
+const float DETUMBLING_GYRO_THRESHOLD = 0.17f;
+const float DETUMBLING_MAG_THRESHOLD = 0.01f;
+float Imax[3] = {1, 1, 1};//TEMP
+const float INIT_P[6 * 6] = {0.01, 0, 0, 0, 0, 0,
                                 0, 0.01, 0, 0, 0, 0,
                                 0, 0, 0.01, 0, 0, 0,
                                 0, 0, 0, 0.01, 0, 0,
                                 0, 0, 0, 0, 0.01, 0,
                                 0, 0, 0, 0, 0, 0.01};
-extern const float Q[6 * 6] =  {0.01, 0, 0, 0, 0, 0,
+const float Q[6 * 6] =  {0.01, 0, 0, 0, 0, 0,
                                 0, 0.01, 0, 0, 0, 0,
                                 0, 0, 0.01, 0, 0, 0,
                                 0, 0, 0, 0.01, 0, 0,
                                 0, 0, 0, 0, 0.01, 0,
                                 0, 0, 0, 0, 0, 0.01};
-extern const float R_IN_SUN[6 * 6] =  {0.01, 0, 0, 0, 0, 0,
+const float R_IN_SUN[6 * 6] =  {0.01, 0, 0, 0, 0, 0,
                                         0, 0.01, 0, 0, 0, 0,
                                         0, 0, 0.01, 0, 0, 0,
                                         0, 0, 0, 0.01, 0, 0,
                                         0, 0, 0, 0, 0.01, 0,
                                         0, 0, 0, 0, 0, 0.01};
-extern const float R_IN_SHADOW[6 * 6] = {0.01, 0, 0, 0, 0, 0,
+const float R_IN_SHADOW[6 * 6] = {0.01, 0, 0, 0, 0, 0,
                                         0, 0.01, 0, 0, 0, 0,
                                         0, 0, 0.01, 0, 0, 0,
                                         0, 0, 0, 1.0, 0, 0,
                                         0, 0, 0, 0, 1.0, 0,
                                         0, 0, 0, 0, 0, 1.0};
-bool filter_failure(float* new_quat, float* gyro, float* new_P, float dt){
+
+bool filter_failure(float* new_quat, float* gyro, float* new_P, float dt) {
+    
     //Assess properties of new quat
     float diff[4];
+    
     quat_diff(estimated_quat, new_quat, diff);
+    
     float diff_rot[3];
+    
     quat2rotationvec(diff, diff_rot);
     scale(diff_rot, 1 / dt, 1, 3);
+    
     if(l2_norm(diff_rot, 3) / l2_norm(gyro, 3) > 10){
         return true;
     }
 
     //Assess properties of cov
-    for(int i = 0; i < 6 * 6; i++){
-        if(isnan(error_quat_cov[i])){
+    for(int i = 0; i < 6 * 6; i++) {
+        if (isnan(error_quat_cov[i])) {
             return true;
         }
     }
+
     return false;
 }
+
 bool ready_to_point(float* photodiode_measurements, float* gyro, float* last_magnetometer_measurements, float* magnetometer_measurements, float dt){
     if(gyro == NULLPTR || last_magnetometer_measurements == NULLPTR || magnetometer_measurements == NULLPTR){
         return false;
@@ -150,7 +158,7 @@ void body(float* last_magnetometer_measurements, //1x3
         }
         else{//rely on BDot to keep detumbling or to hold our attitude steady
             float moments[3];
-            Bdot(magnetometer_measurements, last_magnetometer_measurements, dt, moments);
+            bdot(magnetometer_measurements, last_magnetometer_measurements, dt, moments);
             moment2current3axis(moments, Imax, output_currents);
             return;
         }

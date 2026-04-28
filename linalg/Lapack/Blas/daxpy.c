@@ -11,6 +11,7 @@
 */
 
 #include "../../Lapack/Include/f2c.h"
+#include "eps.h"
 
 /* Subroutine */ int daxpy_(integer* n, floatreal* da, floatreal* dx, integer* incx, floatreal* dy,
                             integer* incy) {
@@ -45,7 +46,7 @@
     if (*n <= 0) {
         return 0;
     }
-    if (*da == 0.) {
+    if (f_eps_close_default(*da, 0.0f)) {
         return 0;
     }
     if (*incx == 1 && *incy == 1) {
