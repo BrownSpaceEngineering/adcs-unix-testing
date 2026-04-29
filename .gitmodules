@@ -1,0 +1,3 @@
+[submodule "linalg"]
+	path = linalg
+	url = git@github.com:ARM-software/CMSIS-DSP.git
