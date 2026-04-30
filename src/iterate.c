@@ -1,21 +1,36 @@
 #include "include/iterate.h"
+#include "Include/arm_math_types.h"
+#include "Include/dsp/matrix_functions.h"
 #include "include/laextension.h"
 #include "declareFunctions.h"
 #include "math.h"
 #include "include/quat.h"
+#include "arm_math.h"
+#include <assert.h>
 
-void ensure_psd(float* mat, int size) {
+/**
+ * \fn ensure_psd
+ * 
+ * \brief Modifies a square matrix in-place to be positive semi-definite.
+ * 
+ * \param mat Pointer to a square matrix. 
+ */
+void ensure_psd(arm_matrix_instance_f32 *mat) {
+    assert (mat->numRows == mat->numCols); // Must be square
+    int size = mat->numRows; // Assuming square matrix, numRows == numCols
+
+    float32_t *mat_data = mat->pData;
     float eps = 1e-6; // Adjust this if necessary (MATLAB used 1e-7)
 
     // 1. Force perfect symmetry: P = (P + P^T) / 2
     for (int i = 0; i < size; i++) {
         for (int j = i + 1; j < size; j++) {
             // Average the mirrored elements
-            float avg = (mat[i * size + j] + mat[j * size + i]) / 2.0f;
+            float avg = (mat_data[i * size + j] + mat_data[j * size + i]) / 2.0f;
             
             // Assign the average back to both spots
-            mat[i * size + j] = avg;
-            mat[j * size + i] = avg;
+            mat_data[i * size + j] = avg;
+            mat_data[j * size + i] = avg;
         }
     }
 
@@ -23,44 +38,90 @@ void ensure_psd(float* mat, int size) {
     // This physically guarantees Positive Definiteness as long as the 
     // variance hasn't completely blown up to negative infinity.
     for (int i = 0; i < size; i++) {
-        mat[i * size + i] += eps;
+        mat_data[i * size + i] += eps;
         
         // Safety catch: if diagonal somehow became negative, hard-reset it
-        if (mat[i * size + i] < 0.0f) {
-            mat[i * size + i] = eps;
+        if (mat_data[i * size + i] < 0.0f) {
+            mat_data[i * size + i] = eps;
         }
     }
 }
-float calculate_lambda(int n, float alpha){
+
+/**
+ * \fn calculate_lambda
+ * 
+ * \brief Calculates the lambda parameter for sigma point generation.
+ * 
+ * \param n The number of state variables.
+ * \param alpha The scaling parameter.
+ *
+ * \return The calculated lambda value.
+ */
+float32_t calculate_lambda(int n, float32_t alpha){
     int k = 3 - n;
     return alpha * alpha * (n + k) - n;
 }
-void get_sigma_points(float lam, float* state, float* P, float* sigmas){
-    float P1[STATE_SIZE * STATE_SIZE];
-    memcpy(P1, P, sizeof(float) * STATE_SIZE * STATE_SIZE);
-    scale(P1, lam + STATE_SIZE, STATE_SIZE, STATE_SIZE);
-    ensure_psd(P1, STATE_SIZE);
-    float U[STATE_SIZE * STATE_SIZE];
-    chol(P1, U, STATE_SIZE);
 
+/**
+ * \fn get_sigma_points
+ * 
+ * \brief Generates sigma points for the Unscented Kalman Filter.
+ */
+void get_sigma_points(float32_t lam, arm_matrix_instance_f32 *state, arm_matrix_instance_f32 *P, arm_matrix_instance_f32* sigmas){
+    
+    // instantiate a workiing copy of P so we don't mess with the original.
+    float32_t P1_data [STATE_SIZE * STATE_SIZE];
+    memcpy(P1_data, P->pData, sizeof(float32_t) * STATE_SIZE * STATE_SIZE);
+
+    arm_matrix_instance_f32 P1 = {
+        .numRows = STATE_SIZE,
+        .numCols = STATE_SIZE,
+        .pData = P1_data, 
+    };   
+
+    float32_t U_data[STATE_SIZE * STATE_SIZE];
+    arm_matrix_instance_f32 U = {
+        .numRows = STATE_SIZE,
+        .numCols = STATE_SIZE,
+        .pData = U_data, 
+    }; 
+
+    float32_t *sigmas_data = sigmas->pData;
+    float32_t *state_data = state->pData;
+
+    // scale(P1, lam + STATE_SIZE, STATE_SIZE, STATE_SIZE);
+    
+    // TODO: is this safe to do in-place? I think so, but 
+    // we should check the implementation of arm_mat_scale_f32 to be sure. 
+    arm_mat_scale_f32(&P1, lam + STATE_SIZE, &P1);
+
+    ensure_psd(&P1);
+    
+    // chol(P1, U, STATE_SIZE);
+
+    arm_mat_cholesky_f32(&P1, &U);
+
+    // TODO: figure out a way to do this with arm matrix functions. 
     for(int i = 0; i<STATE_SIZE; i++){
-        sigmas[i] = state[i];
+        sigmas_data[i] = state_data[i];
     }
     for(int k = 0; k<STATE_SIZE; k++){
         int start = k * STATE_SIZE;
         int sigma_offset = STATE_SIZE;
         for(int i = 0; i<STATE_SIZE; i++){
-            sigmas[sigma_offset + start + i] = state[i] + U[start + i];
+            sigmas_data[sigma_offset + start + i] = state_data[i] + U_data[start + i];
         }
     }
     for(int k = 0; k<STATE_SIZE; k++){
         int start = k * STATE_SIZE;
         int sigma_offset = (STATE_SIZE + 1) * STATE_SIZE;
         for(int i = 0; i<STATE_SIZE; i++){
-            sigmas[sigma_offset + start + i] = state[i] - U[start + i];
+            sigmas_data[sigma_offset + start + i] = state_data[i] - U_data[start + i];
         }
     }
 }
+
+
 void get_weights(float lambda, int n, float alpha, float beta, float* cov_weights, float* mean_weights){
     float c = 0.5f / (n + lambda);
     float c_weights[NUM_SIGMAS];
