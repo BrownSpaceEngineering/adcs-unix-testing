@@ -1,4 +1,5 @@
 #ifndef ORBITAL2ECI
 #define ORBITAL2ECI
-void orbitalToECI(float* kepler6, float* eci);
+#include "arm_math.h"
+void orbital_to_eci(float32_t *kepler6, float32_t *eci);
 #endif
