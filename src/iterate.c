@@ -101,7 +101,8 @@ void get_sigma_points(float32_t lam, arm_matrix_instance_f32 *state, arm_matrix_
 
     arm_mat_cholesky_f32(&P1, &U);
 
-    // TODO: figure out a way to do this with arm matrix functions. 
+    // TODO: figure out a way to do this with arm matrix functions.
+    // populates the first  
     for(int i = 0; i<STATE_SIZE; i++){
         sigmas_data[i] = state_data[i];
     }
@@ -121,40 +122,119 @@ void get_sigma_points(float32_t lam, arm_matrix_instance_f32 *state, arm_matrix_
     }
 }
 
-
-void get_weights(float lambda, int n, float alpha, float beta, float* cov_weights, float* mean_weights){
-    float c = 0.5f / (n + lambda);
-    float c_weights[NUM_SIGMAS];
-    float m_weights[NUM_SIGMAS];
+/**
+ * \fn get_weights * 
+ * 
+ * \brief Calculates the mean and covariance weights for the Unscented Kalman Filter.
+ * 
+ * \param lambda The lambda parameter for sigma point generation.
+ * \param n The number of state variables.
+ * \param alpha The scaling parameter.
+ * \param beta The distribution parameter.
+ * \param cov_weights Output array for covariance weights (size NUM_SIGMAS).
+ * \param mean_weights Output array for mean weights (size NUM_SIGMAS).
+ * 
+ */
+void get_weights(float32_t lambda, 
+                 int n, 
+                 float32_t alpha, 
+                 float32_t beta, 
+                 arm_matrix_instance_f32 *cov_weights, 
+                 arm_matrix_instance_f32 *mean_weights) {
+  
+    float32_t c = (float32_t)0.5f / (n + lambda);
+    float32_t c_weights[NUM_SIGMAS];
+    float32_t m_weights[NUM_SIGMAS];
+    
     for(int i = 0; i< NUM_SIGMAS; i++){
         c_weights[i] = c;
         m_weights[i] = c;
     }
+    
+    // TODO: do we need to fill in dimensions of output matrices? 
     c_weights[0] = lambda / (n + lambda) + (1 - alpha*alpha + beta);
     m_weights[0] = lambda / (n + lambda);
-    memcpy(cov_weights, c_weights, sizeof(float) * NUM_SIGMAS);
-    memcpy(mean_weights, m_weights, sizeof(float) * NUM_SIGMAS);
+    memcpy(cov_weights->pData, c_weights, sizeof(float32_t) * NUM_SIGMAS);
+    memcpy(mean_weights->pData, m_weights, sizeof(float32_t) * NUM_SIGMAS);
 }
-void error_sigmas_to_quat_sigmas(float* error_sigmas, float* current_guess, float* quat_sigmas){
+
+/**
+ * \fn error_sigmas_to_quat_sigmas
+ *
+ * \brief Converts error sigmas to quaternion sigmas.
+ *
+ * \param error_sigmas Pointer to the error sigmas array.
+ * \param current_guess Pointer to the current quaternion guess.
+ * \param quat_sigmas Pointer to the output quaternion sigmas array.
+ */
+void error_sigmas_to_quat_sigmas(arm_matrix_instance_f32 *error_sigmas, 
+                                 arm_matrix_instance_f32 *current_guess, 
+                                 arm_matrix_instance_f32*quat_sigmas){
+    
     int n = NUM_SIGMAS;
-    float q[n * (STATE_SIZE + 1)];
+    float32_t q_data[n * (STATE_SIZE + 1)];
+    arm_matrix_instance_f32 q = {
+        .numRows = n,
+        .numCols = STATE_SIZE + 1,
+        .pData = q_data, 
+    };
+
+    float32_t error_rot_data[3];
+    arm_matrix_instance_f32 error_rot = {
+        .numRows = 3, 
+        .numCols = 1, 
+        .pData = error_rot_data, 
+    };
+
+    float32_t error_quat_data[4];
+    arm_matrix_instance_f32 error_quat = {
+        .numRows = 4,
+        .numCols = 1,
+        .pData = error_quat_data,
+    };
+
+    float32_t new_rotation_data[4];
+    arm_matrix_instance_f32 new_rotation = {
+        .numRows = 4,
+        .numCols = 1,
+        .pData = new_rotation_data,
+    };
+    
+    float32_t norm_rot_data[4];
+    arm_matrix_instance_f32 norm_rot = {
+        .numRows = 4,
+        .numCols = 1,
+        .pData = norm_rot_data,
+    };
+
     for(int i = 0; i<n; i++){
-        float error_rot[3] = {error_sigmas[i * STATE_SIZE],error_sigmas[i * STATE_SIZE + 1],error_sigmas[i * STATE_SIZE + 2]};
-        float error_quat[4];
+        // float32_t error_rot[3] = {error_sigmas[i * STATE_SIZE],error_sigmas[i * STATE_SIZE + 1],error_sigmas[i * STATE_SIZE + 2]};
+        // float32_t error_quat[4];
         rotationvec2quat(error_rot, error_quat);
-        float new_rotation[4];
+        // float32_t new_rotation[4];
         quat_multiply(current_guess, error_quat, new_rotation);
-        float norm_rot[4];
+        // float32_t norm_rot[4];
         quat_norm(new_rotation, norm_rot);
         for(int j = 0; j<4; j++){
-            q[i * (STATE_SIZE + 1) + j] = norm_rot[j];
+            q_data[i * (STATE_SIZE + 1) + j] = norm_rot_data[j];
         }
         for(int j = 4; j < STATE_SIZE + 1; j++){
-            q[i * (STATE_SIZE + 1) + j] = error_sigmas[i * STATE_SIZE + (j - 1)];
+            q_data[i * (STATE_SIZE + 1) + j] = error_sigmas->pData[i * STATE_SIZE + (j - 1)];
         }
     }
-    memcpy(quat_sigmas, q, sizeof(float) * n * (STATE_SIZE + 1));
+    memcpy(quat_sigmas, q.pData, sizeof(float32_t) * n * (STATE_SIZE + 1));
 }
+
+/**
+ * \fn propagate_sigmas
+ *
+ * \brief Propagates the quaternion sigmas through time.
+ *
+ * \param quat_sigmas Pointer to the quaternion sigmas array.
+ * \param gyro Pointer to the gyroscope measurements array.
+ * \param dt The time step.
+ * \param propagated_sigmas Pointer to the output propagated sigmas array.
+ */
 void propagate_sigmas(float* quat_sigmas, float* gyro, float dt, float* propagated_sigmas){
     float p_sigmas[NUM_SIGMAS * (STATE_SIZE + 1)];
     for(int i = 0; i<NUM_SIGMAS; i++){
