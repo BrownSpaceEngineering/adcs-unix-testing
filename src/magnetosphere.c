@@ -21,11 +21,14 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "Include/arm_math_types.h"
+#include "Include/dsp/fast_math_functions.h"
+#include "arm_math.h"
 
 /* Updated public signature — JD split into integer day + fractional day */
-void wmm_eci_embedded_v2(const float r_ECI[3],
-                        int32_t JD_int, float JD_frac,
-                        float B_ECI[3]);
+void wmm_eci_embedded_v2(const float32_t r_ECI[3],
+                        int32_t JD_int, float32_t JD_frac,
+                        float32_t B_ECI[3]);
 
 /* =========================================================================
  * Internal constants
@@ -50,10 +53,10 @@ void wmm_eci_embedded_v2(const float r_ECI[3],
 typedef struct {
     int32_t n;
     int32_t m;
-    float   g;
-    float   h;
-    float   gdot;
-    float   hdot;
+    float32_t   g;
+    float32_t   h;
+    float32_t   gdot;
+    float32_t   hdot;
 } WmmRecord;
 
 static const WmmRecord WMM2025_DATA[] = {
@@ -156,17 +159,17 @@ static const WmmRecord WMM2025_DATA[] = {
  * All helpers that need the Julian Date now accept double JD to avoid
  * re-introducing truncation after the split at the public interface.
  * ========================================================================= */
-float jd2year(double JD);
-float gmst_from_jd(double JD);
-void  ecef_to_geodetic(const float r_ecef[3],
-                    float *lat_rad, float *lon_rad, float *alt_m);
-void  synthesize_mag_field(float lat_rad, float lon_rad, float alt_m,
-                         const float g[WMM_DIM][WMM_DIM],
-                         const float h[WMM_DIM][WMM_DIM],
-                         float *B_N, float *B_E, float *B_D);
-void  load_wmm2025(double JD,
-                  float g[WMM_DIM][WMM_DIM],
-                  float h[WMM_DIM][WMM_DIM]);
+float jd2year(float64_t JD);
+float gmst_from_jd(float64_t JD);
+void  ecef_to_geodetic(const float32_t r_ecef[3],
+                    float32_t *lat_rad, float32_t *lon_rad, float32_t *alt_m);
+void  synthesize_mag_field(float32_t lat_rad, float32_t lon_rad, float32_t alt_m,
+                         const float32_t g[WMM_DIM][WMM_DIM],
+                         const float32_t h[WMM_DIM][WMM_DIM],
+                         float32_t *B_N, float32_t *B_E, float32_t *B_D);
+void  load_wmm2025(float64_t JD,
+                  float32_t g[WMM_DIM][WMM_DIM],
+                  float32_t h[WMM_DIM][WMM_DIM]);
 
 /**
  * \brief Compute the Earth's magnetic field vector at a satellite position in ECI (precision-improved).
@@ -181,49 +184,49 @@ void  load_wmm2025(double JD,
  * \param JD_frac Fractional part of the Julian Date in [0, 1) (e.g. 0.223974f).
  * \param B_ECI   Output magnetic field vector in ECI frame (Tesla), length-3 array.
  */
-void wmm_eci_embedded_v2(const float r_ECI[3],
-                        int32_t JD_int, float JD_frac,
-                        float B_ECI[3])
+void wmm_eci_embedded_v2(const float32_t r_ECI[3],
+                        int32_t JD_int, float32_t JD_frac,
+                        float32_t B_ECI[3])
 {
-    /* Reconstruct full JD in double — no cancellation, no truncation */
-    double JD = (double)JD_int + (double)JD_frac;
+    /* Reconstruct full JD in float64_t — no cancellation, no truncation */
+    float64_t JD = (float64_t)JD_int + (float64_t)JD_frac;
 
     /* --- Build time-extrapolated Gauss coefficients (stack allocated) --- */
-    float g[WMM_DIM][WMM_DIM];
-    float h[WMM_DIM][WMM_DIM];
+    float32_t g[WMM_DIM][WMM_DIM];
+    float32_t h[WMM_DIM][WMM_DIM];
     load_wmm2025(JD, g, h);
 
     /* --- ECI -> ECEF via GMST rotation (Rz) --- */
-    float theta = gmst_from_jd(JD);   /* Fix 1: computed in double internally */
-    float cos_t = cosf(theta);
-    float sin_t = sinf(theta);
+    float32_t theta = gmst_from_jd(JD);   /* Fix 1: computed in float64 internally */
+    float32_t cos_t = arm_cos_f32(theta);
+    float32_t sin_t = arm_sin_f32(theta);
 
-    float r_ecef[3];
+    float32_t r_ecef[3];
     r_ecef[0] =  cos_t * r_ECI[0] + sin_t * r_ECI[1];
     r_ecef[1] = -sin_t * r_ECI[0] + cos_t * r_ECI[1];
     r_ecef[2] =  r_ECI[2];
 
     /* --- ECEF -> geodetic (WGS-84) --- */
-    float lat_rad, lon_rad, alt_m;
+    float32_t lat_rad, lon_rad, alt_m;
     ecef_to_geodetic(r_ecef, &lat_rad, &lon_rad, &alt_m);
 
     /* --- Synthesize field in NED frame (nT) --- */
-    float B_N, B_E, B_D;
+    float32_t B_N, B_E, B_D;
     synthesize_mag_field(lat_rad, lon_rad, alt_m, g, h, &B_N, &B_E, &B_D);
 
     /* --- NED -> ECEF --- */
-    float sin_lat = sinf(lat_rad);
-    float cos_lat = cosf(lat_rad);
-    float sin_lon = sinf(lon_rad);
-    float cos_lon = cosf(lon_rad);
+    float32_t sin_lat = sinf(lat_rad);
+    float32_t cos_lat = cosf(lat_rad);
+    float32_t sin_lon = sinf(lon_rad);
+    float32_t cos_lon = cosf(lon_rad);
 
-    float B_ecef[3];
+    float32_t B_ecef[3];
     B_ecef[0] = (-sin_lat * cos_lon) * B_N + (-sin_lon) * B_E + (-cos_lat * cos_lon) * B_D;
     B_ecef[1] = (-sin_lat * sin_lon) * B_N + ( cos_lon) * B_E + (-cos_lat * sin_lon) * B_D;
     B_ecef[2] = ( cos_lat          ) * B_N +           0 * B_E + (-sin_lat           ) * B_D;
 
     /* --- ECEF -> ECI  (Rz^T = Rz(-theta)) --- */
-    float B_eci_nT[3];
+    float32_t B_eci_nT[3];
     B_eci_nT[0] =  cos_t * B_ecef[0] - sin_t * B_ecef[1];
     B_eci_nT[1] =  sin_t * B_ecef[0] + cos_t * B_ecef[1];
     B_eci_nT[2] =  B_ecef[2];
@@ -239,21 +242,21 @@ void wmm_eci_embedded_v2(const float r_ECI[3],
  *
  * Reads the embedded WMM2025_DATA table and applies secular-variation rates
  * to produce time-adjusted g[n][m] and h[n][m] arrays.  JD is accepted as
- * double to avoid precision loss from the split-JD interface.
+ * float64_t to avoid precision loss from the split-JD interface.
  *
- * \param JD  Julian Date of the target epoch (double precision).
+ * \param JD  Julian Date of the target epoch (float64_t precision).
  * \param g   Output cosine Gauss coefficients g[n][m] in nT (WMM_DIM x WMM_DIM).
  * \param h   Output sine Gauss coefficients h[n][m] in nT (WMM_DIM x WMM_DIM).
  */
-void load_wmm2025(double JD,
-                        float g[WMM_DIM][WMM_DIM],
-                        float h[WMM_DIM][WMM_DIM])
+void load_wmm2025(float64_t JD,
+                        float32_t g[WMM_DIM][WMM_DIM],
+                        float32_t h[WMM_DIM][WMM_DIM])
 {
-    float decimalYear = jd2year(JD);   /* Fix 2: double arithmetic inside */
-    float dt          = decimalYear - WMM_EPOCH;
+    float32_t decimalYear = jd2year(JD);   /* Fix 2: double arithmetic inside */
+    float32_t dt          = decimalYear - WMM_EPOCH;
 
-    memset(g, 0, sizeof(float) * WMM_DIM * WMM_DIM);
-    memset(h, 0, sizeof(float) * WMM_DIM * WMM_DIM);
+    memset(g, 0, sizeof(float32_t) * WMM_DIM * WMM_DIM);
+    memset(h, 0, sizeof(float32_t) * WMM_DIM * WMM_DIM);
 
     for (int32_t i = 0; i < WMM_NRECORDS; ++i) {
         int32_t n = WMM2025_DATA[i].n;
@@ -268,45 +271,45 @@ void load_wmm2025(double JD,
  * \brief Convert a Julian Date to a decimal year (double precision internally).
  *
  * Performs the subtraction from J2000.0 in double to avoid the 3-4 digit
- * precision loss that occurs when a large JD is held in a float before
+ * precision loss that occurs when a large JD is held in a float32_t before
  * the cancellation step.
  *
  * \param JD  Julian Date (double precision).
- * \return    Corresponding decimal year as float (e.g. 2025.5f).
+ * \return    Corresponding decimal year as float32_t (e.g. 2025.5f).
  */
-float jd2year(double JD)
+float32_t jd2year(double JD)
 {
-    return (float)(2000.0 + (JD - 2451545.0) / 365.25);
+    return (float32_t)(2000.0 + (JD - 2451545.0) / 365.25);
 }
 
 /**
  * \brief Compute Greenwich Mean Sidereal Time (GMST) from a Julian Date (double precision internally).
  *
  * The IAU polynomial produces an intermediate value of ~3.5e6 seconds.
- * In float this value has a precision of ~0.25, causing up to ~0.25° error
+ * In float32_t this value has a precision of ~0.25, causing up to ~0.25° error
  * after fmod(gmst_sec, 360) — directly rotating the ECI<->ECEF frame.
  * Computing in double reduces this error to below 1e-9 degrees.
  *
  * \param JD  Julian Date (double precision).
  * \return    GMST angle in radians as float, in [0, 2π).
  */
-float gmst_from_jd(double JD)
+float32_t gmst_from_jd(float64_t JD)
 {
-    double T        = (JD - 2451545.0) / 36525.0;
-    double gmst_sec = 67310.54841
+    float64_t T        = (JD - 2451545.0) / 36525.0;
+    float64_t gmst_sec = 67310.54841
                     + (876600.0 * 3600.0 + 8640184.812866) * T
                     + 0.093104 * T * T
                     - 6.2e-6   * T * T * T;
-    double gmst_deg = fmod(gmst_sec / 240.0, 360.0);
+    float64_t gmst_deg = fmod(gmst_sec / 240.0, 360.0);
     if (gmst_deg < 0.0) gmst_deg += 360.0;
-    return (float)(gmst_deg * M_PI / 180.0);
+    return (float32_t)(gmst_deg * M_PI / 180.0);
 }
 
 /**
  * \brief Convert ECEF Cartesian coordinates to WGS-84 geodetic coordinates.
  *
  * Uses the Bowring iterative method (up to 10 iterations).  Handles the
- * polar singularity (p ≈ 0) as a special case.  Float precision is
+ * polar singularity (p ≈ 0) as a special case.  Float32_t precision is
  * sufficient for this stage of the pipeline.
  *
  * \param r_ecef   Input position in ECEF frame (metres), length-3 array [x, y, z].
@@ -314,21 +317,34 @@ float gmst_from_jd(double JD)
  * \param lon_rad  Output geodetic longitude (radians), in (-π, π].
  * \param alt_m    Output altitude above the WGS-84 ellipsoid (metres).
  */
-void ecef_to_geodetic(const float r_ecef[3],
-                          float *lat_rad, float *lon_rad, float *alt_m)
+void ecef_to_geodetic(const float32_t r_ecef[3],
+                          float32_t *lat_rad, float32_t *lon_rad, float32_t *alt_m)
 {
-    const float a   = WGS84_A;
-    const float b   = WGS84_B;
-    const float e2  = WGS84_E2;
-    const float ep2 = WGS84_EP2;
+    const float32_t a   = WGS84_A;
+    const float32_t b   = WGS84_B;
+    const float32_t e2  = WGS84_E2;
+    const float32_t ep2 = WGS84_EP2;
 
-    float x = r_ecef[0];
-    float y = r_ecef[1];
-    float z = r_ecef[2];
+    float32_t x = r_ecef[0];
+    float32_t y = r_ecef[1];
+    float32_t z = r_ecef[2];
+    float32_t p = sqrtf(x * x + y * y);
 
-    *lon_rad = atan2f(y, x);
+    float32_t theta; 
+    float32_t lat;
+    float32_t alt;
 
-    float p = sqrtf(x * x + y * y);
+    float32_t sin_t; 
+    float32_t cos_t; 
+    float32_t num; 
+    float32_t den; 
+    float32_t sin_lat;
+    float32_t cos_lat;
+    float32_t N;
+    float32_t alt_partial; 
+    float32_t theta_new;
+
+    arm_atan2_f32(y, x, lon_rad);
 
     /* Pole singularity */
     if (p < 1.0e-12f) {
@@ -344,24 +360,29 @@ void ecef_to_geodetic(const float r_ecef[3],
     }
 
     /* Bowring initial estimate */
-    float theta = atan2f(z * a, p * b);
+    arm_atan2_f32(z * a, p * b, &theta);
+    lat = 0.0f;
+    alt = 0.0f;
 
-    float lat = 0.0f, alt = 0.0f;
+
     for (int32_t iter = 0; iter < 10; ++iter) {
-        float sin_t = sinf(theta);
-        float cos_t = cosf(theta);
+        sin_t = arm_sin_f32(theta);
+        cos_t = arm_cos_f32(theta);
 
-        float num = z + ep2 * b * sin_t * sin_t * sin_t;
-        float den = p - e2  * a * cos_t * cos_t * cos_t;
-        lat = atan2f(num, den);
+        num = z + ep2 * b * sin_t * sin_t * sin_t;
+        den = p - e2  * a * cos_t * cos_t * cos_t;
+        arm_atan2_f32(num, den, &lat);
 
-        float sin_lat = sinf(lat);
-        float cos_lat = cosf(lat);
-        float N = a / sqrtf(1.0f - e2 * sin_lat * sin_lat);
+        sin_lat = arm_sin_f32(lat);
+        cos_lat = arm_cos_f32(lat);
+        arm_sqrt_f32(1.0f - e2 * sin_lat * sin_lat, &N);
+        N = a / N; 
 
-        alt = p * cos_lat + z * sin_lat - a * sqrtf(1.0f - e2 * sin_lat * sin_lat);
 
-        float theta_new = atan2f(z * (1.0f - e2 * N / (N + alt)), p);
+        arm_sqrt_f32(1.0f - e2 * sin_lat * sin_lat, &alt_partial);
+        alt = p * cos_lat + z * sin_lat - a * alt_partial;
+
+        arm_atan2_f32(z * (1.0f - e2 * N / (N + alt)), p, &theta_new);
         if (fabsf(theta_new - theta) < 1.0e-10f) {
             theta = theta_new;
             break;
@@ -380,7 +401,7 @@ void ecef_to_geodetic(const float r_ecef[3],
  * associated Legendre polynomials P[n][m] and their colatitude derivatives
  * dP[n][m] up to degree/order WMM_NMAX, sums the series in geocentric
  * spherical components (Br, Bt, Bphi), then rotates to the geodetic NED frame.
- * Float precision is sufficient for this stage of the pipeline.
+ * Float32_t precision is sufficient for this stage of the pipeline.
  *
  * \param lat_rad  Geodetic latitude (radians).
  * \param lon_rad  Geodetic longitude (radians).
@@ -391,32 +412,32 @@ void ecef_to_geodetic(const float r_ecef[3],
  * \param B_E      Output East component of the magnetic field (nT).
  * \param B_D      Output Down component of the magnetic field (nT).
  */
-void synthesize_mag_field(float lat_rad, float lon_rad, float alt_m,
-                               const float g[WMM_DIM][WMM_DIM],
-                               const float h[WMM_DIM][WMM_DIM],
-                               float *B_N, float *B_E, float *B_D)
+void synthesize_mag_field(float32_t lat_rad, float32_t lon_rad, float32_t alt_m,
+                               const float32_t g[WMM_DIM][WMM_DIM],
+                               const float32_t h[WMM_DIM][WMM_DIM],
+                               float32_t *B_N, float32_t *B_E, float32_t *B_D)
 {
     /* ---- Geodetic -> geocentric ---- */
-    const float Re  = WGS84_A;
-    const float f   = WGS84_F;
-    float sin_lat   = sinf(lat_rad);
-    float cos_lat   = cosf(lat_rad);
-    float rc        = Re / sqrtf(1.0f - (2.0f * f - f * f) * sin_lat * sin_lat);
+    const float32_t Re  = WGS84_A;
+    const float32_t f   = WGS84_F;
+    float32_t sin_lat   = sinf(lat_rad);
+    float32_t cos_lat   = cosf(lat_rad);
+    float32_t rc        = Re / sqrtf(1.0f - (2.0f * f - f * f) * sin_lat * sin_lat);
 
-    float p_gc = (rc + alt_m) * cos_lat;
-    float z_gc = (rc * (1.0f - f) * (1.0f - f) + alt_m) * sin_lat;
-    float r    = sqrtf(p_gc * p_gc + z_gc * z_gc);
+    float32_t p_gc = (rc + alt_m) * cos_lat;
+    float32_t z_gc = (rc * (1.0f - f) * (1.0f - f) + alt_m) * sin_lat;
+    float32_t r    = sqrtf(p_gc * p_gc + z_gc * z_gc);
 
-    float phi_prime = asinf(z_gc / r);
-    float psi       = lat_rad - phi_prime;
+    float32_t phi_prime = asinf(z_gc / r);
+    float32_t psi       = lat_rad - phi_prime;
 
-    /* ---- Spherical harmonic synthesis ---- */
-    float theta     = (float)(M_PI / 2.0) - phi_prime;
-    float cos_theta = cosf(theta);
-    float sin_theta = sinf(theta);
+    /* ---- Spherical harmonic synthesis variables ---- */
+    float32_t theta     = (float)(M_PI / 2.0) - phi_prime;
+    float32_t cos_theta = cosf(theta);
+    float32_t sin_theta = sinf(theta);
 
-    float P [WMM_DIM][WMM_DIM];
-    float dP[WMM_DIM][WMM_DIM];
+    float32_t P [WMM_DIM][WMM_DIM];
+    float32_t dP[WMM_DIM][WMM_DIM];
     memset(P,  0, sizeof(P));
     memset(dP, 0, sizeof(dP));
 
@@ -427,19 +448,56 @@ void synthesize_mag_field(float lat_rad, float lon_rad, float alt_m,
     dP[1][0] = -sin_theta;
     dP[1][1] =  cos_theta;
 
+    float32_t factor;
+    float32_t n2; 
+    float32_t m2;
+    float32_t nm1_2;
+    float32_t denom;
+    float32_t K;
+    float32_t M_val;
+
+    /* ---- Series sum declarations ---- */
+
+    float Br   = 0.0f;
+    float Bt   = 0.0f;
+    float Bphi = 0.0f;
+
+    const float a_ref = GEO_REF_RADIUS;
+
+    float32_t ar; 
+    float32_t ratio; 
+
+    float32_t gm; 
+    float32_t hm; 
+    float32_t sin_mlon; 
+    float32_t cos_mlon; 
+    float32_t xy_comp; 
+    float32_t z_comp; 
+
+    /* ---- final conversion declarations ---- */
+
+    float32_t B_X_geo;
+    float32_t B_Z_geo;
+    float32_t cos_psi;
+    float32_t sin_psi;
+
+    /* ---- Spherical harmonic synthesis ---- */
+
     for (int32_t n = 2; n <= WMM_NMAX; ++n) {
         for (int32_t m = 0; m <= n; ++m) {
             if (m == n) {
-                float factor = sqrtf(1.0f - 1.0f / (2.0f * (float)n));
+                arm_sqrt_f32(1.0f - 1.0f / (2.0f * (float32_t)n), &factor);
                 P [n][m] = sin_theta * P [n-1][m-1] * factor;
                 dP[n][m] = (sin_theta * dP[n-1][m-1] + cos_theta * P[n-1][m-1]) * factor;
             } else {
-                float n2    = (float)(n * n);
-                float m2    = (float)(m * m);
-                float nm1_2 = (float)((n-1)*(n-1));
-                float denom = sqrtf(n2 - m2);
-                float K     = (2.0f * (float)n - 1.0f) / denom;
-                float M_val = sqrtf(nm1_2 - m2)        / denom;
+                n2    = (float32_t)(n * n);
+                m2    = (float32_t)(m * m);
+                nm1_2 = (float32_t)((n-1)*(n-1));
+                arm_sqrt_f32(n2 - m2, &denom);
+                denom = 1 / denom; 
+                K     = (2.0f * (float32_t)n - 1.0f) * denom;
+                arm_sqrt_f32(nm1_2 - m2, &M_val); 
+                M_val *= denom;  
 
                 P [n][m] = K * cos_theta * P [n-1][m] - M_val * P [n-2][m];
                 dP[n][m] = K * (cos_theta * dP[n-1][m] - sin_theta * P[n-1][m])
@@ -449,42 +507,37 @@ void synthesize_mag_field(float lat_rad, float lon_rad, float alt_m,
     }
 
     /* ---- Sum up the series ---- */
-    float Br   = 0.0f;
-    float Bt   = 0.0f;
-    float Bphi = 0.0f;
-
-    const float a_ref = GEO_REF_RADIUS;
 
     for (int32_t n = 1; n <= WMM_NMAX; ++n) {
-        float ar = a_ref / r;
-        float ratio = ar;
+        ar = a_ref / r;
+        ratio = ar;
         for (int32_t k = 0; k < n + 1; ++k) ratio *= ar;
 
         for (int32_t m = 0; m <= n; ++m) {
-            float gm = g[n][m];
-            float hm = h[n][m];
+            gm = g[n][m];
+            hm = h[n][m];
 
-            float sin_mlon = sinf((float)m * lon_rad);
-            float cos_mlon = cosf((float)m * lon_rad);
+            sin_mlon = sinf((float32_t)m * lon_rad);
+            cos_mlon = cosf((float32_t)m * lon_rad);
 
-            float xy_comp = gm * cos_mlon + hm * sin_mlon;
-            float z_comp  = gm * sin_mlon - hm * cos_mlon;
+            xy_comp = gm * cos_mlon + hm * sin_mlon;
+            z_comp  = gm * sin_mlon - hm * cos_mlon;
 
-            Br += (float)(n + 1) * ratio * xy_comp * P[n][m];
+            Br += (float32_t)(n + 1) * ratio * xy_comp * P[n][m];
             Bt += ratio * xy_comp * dP[n][m];
 
             if (m > 0 && fabsf(sin_theta) > 1.0e-10f) {
-                Bphi += ratio * (float)m * z_comp * P[n][m] / sin_theta;
+                Bphi += ratio * (float32_t)m * z_comp * P[n][m] / sin_theta;
             }
         }
     }
 
     /* ---- Geocentric (r, theta, phi) -> geodetic NED ---- */
-    float B_X_geo = -Bt;
-    float B_Z_geo = -Br;
+    B_X_geo = -Bt;
+    B_Z_geo = -Br;
 
-    float cos_psi = cosf(psi);
-    float sin_psi = sinf(psi);
+    cos_psi = arm_cos_f32(psi);
+    sin_psi = arm_sin_f32(psi);
 
     *B_N = -(B_X_geo * cos_psi + B_Z_geo * sin_psi);
     *B_E =  Bphi;
