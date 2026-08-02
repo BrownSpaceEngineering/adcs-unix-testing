@@ -10,7 +10,7 @@
  * row_a x column_a
  */
 
-void add(float* A, float* B, float* C, int row_a, int column_a, int column_b) {
+void add(double* A, double* B, double* C, int row_a, int column_a, int column_b) {
 
     /*
      * This uses the formula C=A+B

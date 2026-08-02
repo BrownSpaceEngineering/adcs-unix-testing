@@ -5,16 +5,17 @@
 #include "include/iterate.h"
 #include "include/quest.h"
 #include "include/laextension.h"
+#include "include/magnetosphere.h"
 
-static float uniform_01(void) {
-    return ((float) rand() + 1.0f) / ((float) RAND_MAX + 2.0f);
+static double uniform_01(void) {
+    return ((double) rand() + 1.0) / ((double) RAND_MAX + 2.0);
 }
 
-static float normal_sample(float mean, float stddev) {
-    float u1 = uniform_01();
-    float u2 = uniform_01();
-    float mag = sqrtf(-2.0f * logf(u1));
-    float z0 = mag * cosf(2.0f * (float) M_PI * u2);
+static double normal_sample(double mean, double stddev) {
+    double u1 = uniform_01();
+    double u2 = uniform_01();
+    double mag = sqrt(-2.0 * log(u1));
+    double z0 = mag * cos(2.0 * (double) M_PI * u2);
     return mean + stddev * z0;
 }
 
@@ -22,8 +23,7 @@ static float normal_sample(float mean, float stddev) {
 
 void test_run_all(void) { 
     //test_quest();
-    test_iteration_1vec();
-    //test_iteration_2vec();
+    test_long();
 }
 
 void test_quest(void){
@@ -228,213 +228,198 @@ void test_quaternion(void) {
     }
 }
 
-void test_iteration_2vec(void){
-    float dt = 0.5;
-    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
-    quat_norm(true_body_to_ref, true_body_to_ref);
+void test_iteration_2vec(void){ /* unused – replaced by test_long */ }
 
-    float current_guess[4];
-    for (int i = 0; i < 4; i++) {
-        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
+void test_iteration_1vec(void){ /* unused - replaced by test_long */ }
+
+void test_long(void){
+    // ── simulation parameters (mirrors MUKF_FINAL.py) ─────────────────────────
+    double dt = 0.1;
+    int update_every = 100;     // measurement update every 100 steps = every 10 s (0.1 Hz)
+    int switch_every = 27000;   // toggle 1-vec / 2-vec every 45 min  (45*60/0.1)
+    int simulation_time = 108000; // 3 hours of 10 Hz  (180*60/0.1)
+
+    double sigma_gyro = 0.0005;
+    double sigma_mag  = 0.001;
+    double sigma_sun  = 0.01;
+    double true_bias[3] = {0.002, -0.001, 0.0015};
+
+    double Q_filt[36] = {0};
+    {
+        double att_var = sigma_gyro * dt * sigma_gyro * dt;
+        Q_filt[0]  = att_var; Q_filt[7]  = att_var; Q_filt[14] = att_var;
+        Q_filt[21] = 1e-10;   Q_filt[28] = 1e-10;   Q_filt[35] = 1e-10;
     }
-    quat_norm(current_guess, current_guess);
 
-    float true_omega[3] = {2, 0.5, -1};
-    float true_bias[3] = {0.001f, 0.001f, 0.001f};
-    scale(true_omega, M_PI/180.0f, 1, 3);
+    double R_2vec[36] = {0};
+    R_2vec[0]  = 2e-5; R_2vec[7]  = 2e-5; R_2vec[14] = 2e-5;
+    R_2vec[21] = 1e-4; R_2vec[28] = 1e-4; R_2vec[35] = 1e-4;
 
-    float gyro_noise = 0.001;
-    float msmt_noise = 0.03;
+    double R_1vec[9] = {0};
+    R_1vec[0] = 2e-5; R_1vec[4] = 2e-5; R_1vec[8] = 2e-5;
 
-    float state[6] = {0,0,0,0,0,0};
-    float cov[36];
-    float Q[36];
-    float R[36];
-    eye(cov, 6, 6);
-    scale(cov, 0.1, 6, 6);
-    eye(R, 6, 6);
-    scale(R, 0.1, 6, 6);
-    eye(Q, 6, 6);
-    scale(Q, 0.01, 6, 6);
+    // ── orbital parameters ──────────────────────────────────────────────────────
+    double orbital_rate = 2.0 * (double)M_PI / (92.0 * 60.0);
+    double incl_rad = 51.6 * (double)M_PI / 180.0;
+    double s_incl = sin(incl_rad), c_incl = cos(incl_rad);
+    double r_ISS_m  = 6787000.0;
+    int32_t jd_int  = 2460676;
+    double  jd_frac = 0.5;
 
-    float ref[6] = {40, 0, 0, 0, 40, 0};
-    float ref_1[3] = {40,0,0};
-    float ref_2[3] = {0,40,0};
+    // Reference vector 2 — fixed in ECI (matches Python's ref_vec_2 = [1,0,0])
+    double ref_vec2[3] = {1.0, 0.0, 0.0};
 
-    for(int iter = 0; iter < 1000; iter++){
-        float simulated_gyro_measurement[3];
-        for(int i = 0; i<3; i++){
-            float uniform_noise = (2.0f * ((float) rand() / (float) RAND_MAX)) - 1.0f;
-            simulated_gyro_measurement[i] = true_omega[i] + true_bias[i] + uniform_noise * gyro_noise;
-        }
-        
-        float delta_vec[3];
-        memcpy(delta_vec, true_omega, sizeof(float) * 3);
-        scale(delta_vec, dt, 1, 3);
-
-        float delta_q[4];
-        rotationvec2quat(delta_vec, delta_q);
-
-        float new_true_body_to_ref[4];
-        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
-        quat_norm(new_true_body_to_ref, true_body_to_ref);
-        float new_ref_to_body[4];
-        quat_inv(true_body_to_ref, new_ref_to_body);
-
-        
-        float body_1[3];
-        float body_2[3];
-        quat_apply(new_ref_to_body, ref_1, body_1);
-        quat_apply(new_ref_to_body, ref_2, body_2);
-        float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
-        for(int i = 0; i<6; i++){
-            float uniform_noise = (2.0f * ((float) rand() / (float) RAND_MAX)) - 1.0f;
-            body[i] = body[i] + uniform_noise * msmt_noise;
-        }
-
-        float new_error_state[6];
-        float new_quat[4];
-        float new_P[36];
-        iterate(state, current_guess, cov, body, ref, simulated_gyro_measurement, Q, R, dt, new_error_state, new_quat, new_P);
-
-        new_error_state[0] = 0;
-        new_error_state[1] = 0;
-        new_error_state[2] = 0;
-
-        memcpy(state, new_error_state, sizeof(float) * 6);
-        memcpy(cov, new_P, sizeof(float) * 36);
-        memcpy(current_guess, new_quat, sizeof(float) * 4);
-        quat_norm(current_guess, current_guess);
-        if(iter % 50 == 0){
-            float current_q_err[4];
-            quat_diff(true_body_to_ref, current_guess, current_q_err);
-            float current_err[3];
-            quat2rotationvec(current_q_err, current_err);
-            printf("Estimate Error: %f\n", (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
-            printf("Estimated Bias: ");
-            float bias[3] = {state[3], state[4], state[5]};
-            scale(bias, 180.0f/M_PI, 1, 3);
-            print(bias, 1, 3);
-            printf("\n");
-        }
+    // ── true initial attitude ────────────────────────────────────────────────────
+    double nadir_quat_0[4];
+    {
+        double bX[3]={0.0,-s_incl,c_incl}, bY[3]={0.0,c_incl,s_incl}, bZ[3]={-1.0,0.0,0.0};
+        double Rm[9]={bX[0],bY[0],bZ[0],bX[1],bY[1],bZ[1],bX[2],bY[2],bZ[2]};
+        double tr0=Rm[0]+Rm[4]+Rm[8];
+        double sv=0.5/sqrt(tr0+1.0);
+        nadir_quat_0[0]=0.25/sv; nadir_quat_0[1]=(Rm[7]-Rm[5])*sv;
+        nadir_quat_0[2]=(Rm[2]-Rm[6])*sv; nadir_quat_0[3]=(Rm[3]-Rm[1])*sv;
+        quat_norm(nadir_quat_0, nadir_quat_0);
     }
-}
 
-void test_iteration_1vec(void){
-    float dt = 0.5;
-    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
-    float true_ref_to_body[4];
-    quat_norm(true_body_to_ref, true_body_to_ref);
-    quat_inv(true_body_to_ref, true_ref_to_body);
+    double true_quat[4];
+    memcpy(true_quat, nadir_quat_0, 4*sizeof(double));
 
-    float current_guess[4];
-    for (int i = 0; i < 4; i++) {
-        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
-    }
-    quat_norm(current_guess, current_guess);
+    srand(42);
+    double perturb_vec[3] = {
+        normal_sample(0.0, 0.05),
+        normal_sample(0.0, 0.05),
+        normal_sample(0.0, 0.05)
+    };
+    double perturb_q[4];
+    rotationvec2quat(perturb_vec, perturb_q);
+    double current_quat[4];
+    quat_multiply(perturb_q, true_quat, current_quat);
+    quat_norm(current_quat, current_quat);
 
-    float true_omega[3] = {2, 0.5, -0.5};
-    float true_bias[3] = {0.001f, 0.001f, 0.001f};
-    scale(true_omega, M_PI/180.0f, 1, 3);
+    double state[6]  = {0};
+    double cov[36];
+    memset(cov, 0, sizeof(double) * 36);
+    // Initialise full covariance to 0.01 * I (matches Python's P = np.eye(6) * 0.01)
+    cov[0] = 0.01; cov[7] = 0.01; cov[14] = 0.01;
+    cov[21] = 0.01; cov[28] = 0.01; cov[35] = 0.01;
 
-    float gyro_noise = 0.001;
-    float msmt_noise = 0.03;
+    int vector_mode = 1;
 
-    float state[6] = {0,0,0,0,0,0};
-    float cov[36];
-    float Q[36];
-    float R[36];
-    eye(cov, 6, 6);
-    scale(cov, 0.1, 6, 6);
-    memset(R, 0, sizeof(float) * 36);
-    R[0] = 0.03f;
-    R[7] = 0.03f;
-    R[14] = 0.03f;
-    R[21] = 1.0f;
-    R[28] = 1.0f;
-    R[35] = 1.0f;
-    eye(Q, 6, 6);
-    scale(Q, 0.01, 6, 6);
-
-    float ref[3] = {40, -40, 30};
-    float last_ref[3] = {40, -40, 30};
-    float last_body[3];
-    quat_apply(true_ref_to_body, last_ref, last_body);
-
-    for(int iter = 0; iter < 1000; iter++){
-        float simulated_gyro_measurement[3];
-        for(int i = 0; i<3; i++){
-            simulated_gyro_measurement[i] = true_omega[i] + normal_sample(true_bias[i], gyro_noise);
+    for(int i = 0; i < simulation_time; i++){
+        if(i > 0 && i % switch_every == 0){
+            vector_mode = (vector_mode == 1) ? 2 : 1;
         }
-        
-        float delta_vec[3];
-        memcpy(delta_vec, true_omega, sizeof(float) * 3);
-        scale(delta_vec, dt, 1, 3);
 
-        float delta_q[4];
-        rotationvec2quat(delta_vec, delta_q);
+        double theta = (double)i * orbital_rate * dt;
+        double ct = cos(theta), st = sin(theta);
 
-        float new_true_body_to_ref[4];
-        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
-        quat_norm(new_true_body_to_ref, true_body_to_ref);
-        float new_ref_to_body[4];
-        quat_inv(true_body_to_ref, new_ref_to_body);
+        double bX[3] = {0.0,  -s_incl,      c_incl     };
+        double bY[3] = {-st,   ct*c_incl,   ct*s_incl  };
+        double bZ[3] = {-ct,  -st*c_incl,  -st*s_incl  };
 
-        float d_ref[3];
-        for(int i = 0; i<3; i++){
-            d_ref[i] = (ref[i] - last_ref[i]) / dt;
+        double Rmat[9] = {bX[0],bY[0],bZ[0], bX[1],bY[1],bZ[1], bX[2],bY[2],bZ[2]};
+        double trv = Rmat[0]+Rmat[4]+Rmat[8];
+        double nadir_q[4];
+        if (trv > 0.0) {
+            double sv=0.5/sqrt(trv+1.0);
+            nadir_q[0]=0.25/sv; nadir_q[1]=(Rmat[7]-Rmat[5])*sv;
+            nadir_q[2]=(Rmat[2]-Rmat[6])*sv; nadir_q[3]=(Rmat[3]-Rmat[1])*sv;
+        } else if (Rmat[0]>Rmat[4] && Rmat[0]>Rmat[8]) {
+            double sv=2.0*sqrt(1.0+Rmat[0]-Rmat[4]-Rmat[8]);
+            nadir_q[0]=(Rmat[7]-Rmat[5])/sv; nadir_q[1]=0.25*sv;
+            nadir_q[2]=(Rmat[1]+Rmat[3])/sv; nadir_q[3]=(Rmat[2]+Rmat[6])/sv;
+        } else if (Rmat[4] > Rmat[8]) {
+            double sv=2.0*sqrt(1.0+Rmat[4]-Rmat[0]-Rmat[8]);
+            nadir_q[0]=(Rmat[2]-Rmat[6])/sv; nadir_q[1]=(Rmat[1]+Rmat[3])/sv;
+            nadir_q[2]=0.25*sv; nadir_q[3]=(Rmat[5]+Rmat[7])/sv;
+        } else {
+            double sv=2.0*sqrt(1.0+Rmat[8]-Rmat[0]-Rmat[4]);
+            nadir_q[0]=(Rmat[3]-Rmat[1])/sv; nadir_q[1]=(Rmat[2]+Rmat[6])/sv;
+            nadir_q[2]=(Rmat[5]+Rmat[7])/sv; nadir_q[3]=0.25*sv;
         }
-        float body[3];
-        quat_apply(new_ref_to_body, ref, body);
-        for(int i = 0; i<3; i++){
-            body[i] = body[i] + normal_sample(0.0f, msmt_noise);
+        quat_norm(nadir_q, nadir_q);
+
+        double q_inv_prev[4], delta_q_step[4], omega_vec[3];
+        quat_inv(true_quat, q_inv_prev);
+        quat_multiply(q_inv_prev, nadir_q, delta_q_step);
+        quat2rotationvec(delta_q_step, omega_vec);
+        double true_omega[3] = {omega_vec[0]/dt, omega_vec[1]/dt, omega_vec[2]/dt};
+        memcpy(true_quat, nadir_q, 4*sizeof(double));
+
+        double r_ECI_m[3] = {r_ISS_m*ct, r_ISS_m*st*c_incl, r_ISS_m*st*s_incl};
+        double B_ECI[3];
+        wmm_eci_embedded_v2(r_ECI_m, jd_int, jd_frac, B_ECI);
+        double B_mag = l2_norm(B_ECI, 3);
+        double ref_vec1[3] = {B_ECI[0]/B_mag, B_ECI[1]/B_mag, B_ECI[2]/B_mag};
+
+        double gyro[3];
+        for(int j = 0; j < 3; j++){
+            gyro[j] = true_omega[j] + true_bias[j] + normal_sample(0.0, sigma_gyro);
         }
-        float d_body[3];
-        float c_prod[3];
-        cross(simulated_gyro_measurement, body, c_prod);
-        for(int i = 0; i<3; i++){
-            d_body[i] = (body[i] - last_body[i]) / dt + c_prod[i];
+
+        double new_state[6];
+        double new_quat[4];
+        double new_cov[36];
+
+        if(i % update_every == 0){
+            double ref_to_body[4];
+            quat_inv(true_quat, ref_to_body);
+
+            if(vector_mode == 2){
+                double b1[3], b2[3];
+                quat_apply(ref_to_body, ref_vec1, b1);
+                quat_apply(ref_to_body, ref_vec2, b2);
+                for(int j = 0; j < 3; j++){
+                    b1[j] += normal_sample(0.0, sigma_mag);
+                    b2[j] += normal_sample(0.0, sigma_sun);
+                }
+                double n1 = l2_norm(b1, 3), n2 = l2_norm(b2, 3);
+                for(int j = 0; j < 3; j++){ b1[j] /= n1; b2[j] /= n2; }
+
+                double body[6] = {b1[0],b1[1],b1[2], b2[0],b2[1],b2[2]};
+                double ref[6]  = {ref_vec1[0],ref_vec1[1],ref_vec1[2],
+                                 ref_vec2[0],ref_vec2[1],ref_vec2[2]};
+                iterate(state, current_quat, cov, body, ref, 2,
+                        gyro, Q_filt, R_2vec, dt, new_state, new_quat, new_cov);
+            } else {
+                // 1-vector update: magnetometer only (eclipse mode)
+                double b1[3];
+                quat_apply(ref_to_body, ref_vec1, b1);
+                for(int j = 0; j < 3; j++) b1[j] += normal_sample(0.0, sigma_mag);
+                double n1 = l2_norm(b1, 3);
+                for(int j = 0; j < 3; j++) b1[j] /= n1;
+
+                iterate(state, current_quat, cov, b1, ref_vec1, 1,
+                        gyro, Q_filt, R_1vec, dt, new_state, new_quat, new_cov);
+            }
+        } else {
+            iterate(state, current_quat, cov, NULL, NULL, 0,
+                    gyro, Q_filt, NULL, dt, new_state, new_quat, new_cov);
         }
-        float ref_norm = l2_norm(ref, 3);
-        float body_norm = l2_norm(body, 3);
-        float body_full[6] = {body[0], body[1], body[2], d_body[0], d_body[1], d_body[2]};
-        float reference[6] = {ref[0], ref[1], ref[2], d_ref[0], d_ref[1], d_ref[2]};
 
-        float new_error_state[6];
-        float new_quat[4];
-        float new_P[36];
-        iterate(state, current_guess, cov, body_full, reference, simulated_gyro_measurement, Q, R, dt, new_error_state, new_quat, new_P);
+        new_state[0] = 0.0;
+        new_state[1] = 0.0;
+        new_state[2] = 0.0;
 
-        new_error_state[0] = 0;
-        new_error_state[1] = 0;
-        new_error_state[2] = 0;
-        new_error_state[3] = 0;
-        new_error_state[4] = 0;
-        new_error_state[5] = 0;
+        memcpy(state, new_state, sizeof(double) * 6);
+        memcpy(cov, new_cov, sizeof(double) * 36);
+        memcpy(current_quat, new_quat, sizeof(double) * 4);
+        quat_norm(current_quat, current_quat);
 
-        memcpy(state, new_error_state, sizeof(float) * 6);
-        memcpy(cov, new_P, sizeof(float) * 36);
-        memcpy(current_guess, new_quat, sizeof(float) * 4);
-        quat_norm(current_guess, current_guess);
-        if(iter % 50 == 0){
-            float current_q_err[4];
-            quat_diff(true_body_to_ref, current_guess, current_q_err);
-            float current_err[3];
-            quat2rotationvec(current_q_err, current_err);
-            printf("Msmt Error: %f\n", (180.0f / M_PI) * (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
-            printf("Estimated Bias: ");
-            float bias[3] = {state[3], state[4], state[5]};
-            scale(bias, 180.0f/M_PI, 1, 3);
-            print(bias, 1, 3);
-            printf("\n");
-        }
-        memcpy(last_body, body, sizeof(float) * 3);
-        memcpy(last_ref, ref, sizeof(float) * 3);
-
-        //THE IMPORTANT PART: REF NEEDS TO CHANGE A DECENT AMT
-        for(int i = 0; i<3; i++){
-            ref[i] = ref[i] + normal_sample(0.0f, 0.1f);
+        if(i % 1000 == 0){
+            double err_q[4];
+            quat_diff(true_quat, current_quat, err_q);
+            double err_vec[3];
+            quat2rotationvec(err_q, err_vec);
+            double err_deg = (180.0 / (double)M_PI) * l2_norm(err_vec, 3);
+            double time_s = i * dt;
+            double be[3] = {state[3]-true_bias[0], state[4]-true_bias[1], state[5]-true_bias[2]};
+            printf("%5.0f s | Mode: %dv | att: %6.3f deg"
+                   " | bias est [%+7.5f %+7.5f %+7.5f]"
+                   " | bias err [%+7.5f %+7.5f %+7.5f] rad/s\n",
+                   time_s, vector_mode, err_deg,
+                   state[3], state[4], state[5],
+                   be[0], be[1], be[2]);
         }
     }
-    
 }

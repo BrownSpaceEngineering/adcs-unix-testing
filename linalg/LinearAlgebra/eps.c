@@ -1,8 +1,8 @@
 /**
  * eps.c
  *
- * Defines convenience function for comparing float and floats (equality within tolerance)
- * and float and float matrices (elementwise equality within tolerance).
+ * Defines convenience function for comparing double and floats (equality within tolerance)
+ * and double and double matrices (elementwise equality within tolerance).
  *
  * Created: Friday, 13th February 2026
  * Authors: Siddharta Laloux
@@ -17,18 +17,18 @@
  * \brief Compares two floats for "closeness" within a specified tolerance
  * (epsilon) accounting for the magnitude of the numbers.
  *
- * \param a the first float to compare
- * \param b the second float to compare
+ * \param a the first double to compare
+ * \param b the second double to compare
  * \param epsilon the tolerance for comparison (e.g. FLT_EPSILON)
  */
-inline bool f_eps_close(float a, float b, float epsilon) {
-    float diff = fabsf(a - b);
+inline bool f_eps_close(double a, double b, double epsilon) {
+    double diff = fabs(a - b);
     if (diff < epsilon) {
         return true; // Identical or very close
     }
 
     // Scale epsilon by the magnitude of the numbers
-    float largest = (fabsf(b) > fabsf(a)) ? fabsf(b) : fabsf(a);
+    double largest = (fabs(b) > fabs(a)) ? fabs(b) : fabs(a);
     return diff <= (largest * epsilon);
 }
 
@@ -41,10 +41,10 @@ inline bool f_eps_close(float a, float b, float epsilon) {
  * \note This function uses the default epsilon value of FLT_EPSILON,
  * which is the smallest difference between two representable floats.
  *
- * \param a the first float to compare
- * \param b the second float to compare
+ * \param a the first double to compare
+ * \param b the second double to compare
  */
-inline bool f_eps_close_default(float a, float b) { return f_eps_close(a, b, FLT_EPSILON); }
+inline bool f_eps_close_default(double a, double b) { return f_eps_close(a, b, FLT_EPSILON); }
 
 /**
  * \fn eps_close_matrix
@@ -58,7 +58,7 @@ inline bool f_eps_close_default(float a, float b) { return f_eps_close(a, b, FLT
  * \param column the number of columns in each matrix
  * \param epsilon the tolerance for comparison (e.g. FLT_EPSILON)
  */
-inline bool f_eps_close_matrix(float* A, float* B, int row, int column, float epsilon) {
+inline bool f_eps_close_matrix(double* A, double* B, int row, int column, double epsilon) {
     for (int i = 0; i < row * column; i++) {
         if (!f_eps_close(A[i], B[i], epsilon)) {
             return false;
@@ -81,7 +81,7 @@ inline bool f_eps_close_matrix(float* A, float* B, int row, int column, float ep
  * \param row the number of rows in each matrix
  * \param column the number of columns in each matrix
  */
-inline bool f_eps_close_matrix_default(float* A, float* B, int row, int column) {
+inline bool f_eps_close_matrix_default(double* A, double* B, int row, int column) {
     return f_eps_close_matrix(A, B, row, column, FLT_EPSILON);
 }
 
@@ -93,18 +93,18 @@ inline bool f_eps_close_matrix_default(float* A, float* B, int row, int column) 
  * \brief Compares two floats for "closeness" within a specified tolerance
  * (epsilon) accounting for the magnitude of the numbers.
  *
- * \param a the first float to compare
- * \param b the second float to compare
+ * \param a the first double to compare
+ * \param b the second double to compare
  * \param epsilon the tolerance for comparison (e.g. DBL_EPSILON)
  */
-inline bool dbl_eps_close(float a, float b, float epsilon) {
-    float diff = fabs(a - b);
+inline bool dbl_eps_close(double a, double b, double epsilon) {
+    double diff = fabs(a - b);
     if (diff < epsilon) {
         return true; // Identical or very close
     }
 
     // Scale epsilon by the magnitude of the numbers
-    float largest = (fabs(b) > fabs(a)) ? fabs(b) : fabs(a);
+    double largest = (fabs(b) > fabs(a)) ? fabs(b) : fabs(a);
     return diff <= (largest * epsilon);
 }
 
@@ -117,10 +117,10 @@ inline bool dbl_eps_close(float a, float b, float epsilon) {
  * \note This function uses the default epsilon value of FLT_EPSILON,
  * which is the smallest difference between two representable floats.
  *
- * \param a the first float to compare
- * \param b the second float to compare
+ * \param a the first double to compare
+ * \param b the second double to compare
  */
-inline bool dbl_eps_close_default(float a, float b) { return dbl_eps_close(a, b, DBL_EPSILON); }
+inline bool dbl_eps_close_default(double a, double b) { return dbl_eps_close(a, b, DBL_EPSILON); }
 
 /**
  * \fn eps_close_matrix
@@ -134,7 +134,7 @@ inline bool dbl_eps_close_default(float a, float b) { return dbl_eps_close(a, b,
  * \param column the number of columns in each matrix
  * \param epsilon the tolerance for comparison (e.g. FLT_EPSILON)
  */
-inline bool dbl_eps_close_matrix(float* A, float* B, int row, int column, float epsilon) {
+inline bool dbl_eps_close_matrix(double* A, double* B, int row, int column, double epsilon) {
     for (int i = 0; i < row * column; i++) {
         if (!dbl_eps_close(A[i], B[i], epsilon)) {
             return false;
@@ -157,6 +157,6 @@ inline bool dbl_eps_close_matrix(float* A, float* B, int row, int column, float 
  * \param row the number of rows in each matrix
  * \param column the number of columns in each matrix
  */
-inline bool dbl_eps_close_matrix_default(float* A, float* B, int row, int column) {
+inline bool dbl_eps_close_matrix_default(double* A, double* B, int row, int column) {
     return dbl_eps_close_matrix(A, B, row, column, DBL_EPSILON);
 }

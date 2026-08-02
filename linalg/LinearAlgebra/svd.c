@@ -11,7 +11,7 @@
  * Do SVD on the matrix A who has the size row x column. Get the U: size row x row, S: size row x
  * column, V: size column x column
  */
-void svd(float* A, float* U, float* S, float* V, int row, int column) {
+void svd(double* A, double* U, double* S, double* V, int row, int column) {
 
     integer M = row;
     integer N = column;
@@ -25,16 +25,16 @@ void svd(float* A, float* U, float* S, float* V, int row, int column) {
     floatreal A_[row * column];
 
     // Pre-work
-    memcpy(A_, A, row * column * sizeof(float)); // Copy from A to A_
+    memcpy(A_, A, row * column * sizeof(double)); // Copy from A to A_
     tran(A_, row, column); // Important to do transpose of A, due to this FORTRAN library
-    memset(S_, 0, column * sizeof(float)); // Need to set all the S to zeros
+    memset(S_, 0, column * sizeof(double)); // Need to set all the S to zeros
 
     // Find optimal solution
     LWORK = -1;
     dgesvd_("All", "All", &M, &N, A_, &LDA, S_, U, &LDU, V, &LDVT, &WKOPT, &LWORK, &INFO_SVD);
     LWORK = WKOPT;
     floatreal WORK[LWORK];
-    memset(WORK, 0, LWORK * sizeof(float));
+    memset(WORK, 0, LWORK * sizeof(double));
 
     // Solve
     dgesvd_("All", "All", &M, &N, A_, &LDA, S_, U, &LDU, V, &LDVT, WORK, &LWORK, &INFO_SVD);

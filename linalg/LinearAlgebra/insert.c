@@ -13,7 +13,7 @@
  * first element of A into B Notice that start positions are indexed from zero
  */
 
-void insert(float* A, float* B, int row_a, int column_a, int column_b, int startRow_b,
+void insert(double* A, double* B, int row_a, int column_a, int column_b, int startRow_b,
             int startColumn_b) {
 
     // Initial
@@ -22,7 +22,7 @@ void insert(float* A, float* B, int row_a, int column_a, int column_b, int start
 
     // We start at startRow_b and end at row_a, then we have inserted all rows from A into B
     for (int i = 0; i < row_a; i++) {
-        memcpy(B, A, column_a * sizeof(float)); // Insert the complete row from A into B
+        memcpy(B, A, column_a * sizeof(double)); // Insert the complete row from A into B
         A += column_a;
         B += column_b;
     }

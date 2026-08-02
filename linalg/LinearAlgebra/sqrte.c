@@ -10,10 +10,10 @@
 /*
  * Take the square root of every element of matrix A, size row x column
  */
-void sqrtfe(float* A, int row, int column) {
+void sqrtfe(double* A, int row, int column) {
     for (int i = 0; i < row; i++)
         for (int j = 0; j < column; j++) {
-            *A = sqrtf(*(A));
+            *A = sqrt(*(A));
             A++;
         }
 }

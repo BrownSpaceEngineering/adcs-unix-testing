@@ -11,12 +11,12 @@
  * Take power p, on all element on the diagonal of matrix A, who has the size row x column
  */
 
-void diagpower(float* A, float p, int row, int column) {
+void diagpower(double* A, double p, int row, int column) {
 
     for (int i = 0; i < row; i++) {
         for (int j = 0; j < column; j++) {
             if (j == i) {
-                *(A) = powf(*(A), p);
+                *(A) = pow(*(A), p);
                 A += column + 1;
             }
         }

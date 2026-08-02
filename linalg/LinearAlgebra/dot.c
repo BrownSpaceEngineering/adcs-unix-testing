@@ -23,10 +23,10 @@
  *
  */
 
-float dot(float* A, float* B, int row) {
+double dot(double* A, double* B, int row) {
 
     // Reset
-    float sum = 0;
+    double sum = 0;
 
     // Multiply each row
     for (int i = 0; i < row; ++i) {

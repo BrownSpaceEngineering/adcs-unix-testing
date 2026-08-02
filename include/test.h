@@ -8,4 +8,5 @@ void test_quaternion(void);
 void test_iteration_1vec(void);
 void test_iteration_2vec(void);
 void test_quest(void);
+void test_long(void);
 #endif

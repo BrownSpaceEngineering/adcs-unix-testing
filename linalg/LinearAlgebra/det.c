@@ -11,7 +11,7 @@
  * Find the determiant of a square matrix A with size row x row
  */
 
-float det(float* A, int row) {
+double det(double* A, int row) {
 
     if (row == 1) {
         // 1x1 "matrix" - Just return the value
@@ -30,9 +30,9 @@ float det(float* A, int row) {
 
     } else {
 
-        float mat[row][row];
-        float ratio;
-        float determinant = 1; // Initial det value
+        double mat[row][row];
+        double ratio;
+        double determinant = 1; // Initial det value
 
         // We need to create the matrix into an array matrix, like a normal matrix again
         for (int i = 0; i < row; i++) {
@@ -53,7 +53,7 @@ float det(float* A, int row) {
 #pragma GCC diagnostic ignored "-Wfloat-equal"
 
                     if (mat[i][i] == 0) {
-                        mat[i][i] = powf(2.2204, -16); // Same as MATLAB command eps
+                        mat[i][i] = pow(2.2204, -16); // Same as MATLAB command eps
                     }
 
 #pragma GCC diagnostic pop

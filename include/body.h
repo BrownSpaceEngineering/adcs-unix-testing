@@ -13,7 +13,7 @@ extern float Imax[3];
 extern const float INIT_P[6 * 6];
 extern const float Q[6 * 6];
 extern const float R_IN_SUN[6 * 6];
-extern const float R_IN_SHADOW[6 * 6];
+extern const float R_IN_SHADOW[3 * 3];
 
 static float kepler_posn[6];
 static float estimated_quat[4];

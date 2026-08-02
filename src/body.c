@@ -41,12 +41,9 @@ extern const float R_IN_SUN[6 * 6] =  {0.01, 0, 0, 0, 0, 0,
                                         0, 0, 0, 0.01, 0, 0,
                                         0, 0, 0, 0, 0.01, 0,
                                         0, 0, 0, 0, 0, 0.01};
-extern const float R_IN_SHADOW[6 * 6] = {0.01, 0, 0, 0, 0, 0,
-                                        0, 0.01, 0, 0, 0, 0,
-                                        0, 0, 0.01, 0, 0, 0,
-                                        0, 0, 0, 1.0, 0, 0,
-                                        0, 0, 0, 0, 1.0, 0,
-                                        0, 0, 0, 0, 0, 1.0};
+extern const float R_IN_SHADOW[3 * 3] = {0.01, 0, 0,
+                                         0, 0.01, 0,
+                                         0, 0, 0.01};
 bool filter_failure(float* new_quat, float* gyro, float* new_P, float dt){
     //Assess properties of new quat
     float diff[4];
@@ -180,7 +177,7 @@ void body(float* last_magnetometer_measurements, //1x3
             float new_error_state[6];
             float new_estimated_quat[4];
             float new_P[6 * 6];
-            iterate(error_quat_state, estimated_quat, error_quat_cov, body, ref, gyro_measurements, Q, R_IN_SUN, dt, new_error_state, new_estimated_quat, new_P);
+            iterate(error_quat_state, estimated_quat, error_quat_cov, body, ref, 2, gyro_measurements, (float*)Q, (float*)R_IN_SUN, dt, new_error_state, new_estimated_quat, new_P);
 
             //TODO: add a better failure check here
             if(filter_failure(new_estimated_quat, gyro_measurements, new_P, dt)){
@@ -241,7 +238,7 @@ void body(float* last_magnetometer_measurements, //1x3
             float new_error_state[6];
             float new_estimated_quat[4];
             float new_P[6 * 6];
-            iterate(error_quat_state, estimated_quat, error_quat_cov, body, ref, unbiased_gyro, Q, R_IN_SUN, dt, new_error_state, new_estimated_quat, new_P);
+            iterate(error_quat_state, estimated_quat, error_quat_cov, body, ref, 2, unbiased_gyro, (float*)Q, (float*)R_IN_SUN, dt, new_error_state, new_estimated_quat, new_P);
 
             //TODO: add a better failure check here
             if(filter_failure(new_estimated_quat, gyro_measurements, new_P, dt)){

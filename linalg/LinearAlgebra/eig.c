@@ -7,8 +7,8 @@
 
 #include "declareFunctions.h"
 
-void loadEigen(integer row, floatreal* wr, floatreal* wi, float* Ereal, float* Eimag);
-void loadVector(integer N, floatreal* wi, floatreal* v, float* Vreal, float* Vimag);
+void loadEigen(integer row, floatreal* wr, floatreal* wi, double* Ereal, double* Eimag);
+void loadVector(integer N, floatreal* wi, floatreal* v, double* Vreal, double* Vimag);
 
 /*
  *	Solve the eigenvalue problem
@@ -21,8 +21,8 @@ void loadVector(integer N, floatreal* wi, floatreal* v, float* Vreal, float* Vim
  *	Vimag_right size row x row  - Eigenvectors imag right
  */
 
-void eig(float* A, float* Ereal, float* Eimag, float* Vreal_left, float* Vimag_left,
-         float* Vreal_right, float* Vimag_right, int row) {
+void eig(double* A, double* Ereal, double* Eimag, double* Vreal_left, double* Vimag_left,
+         double* Vreal_right, double* Vimag_right, int row) {
     /* Locals */
     integer N = row;
     integer LDA = row;
@@ -39,7 +39,7 @@ void eig(float* A, float* Ereal, float* Eimag, float* Vreal_left, float* Vimag_l
 
     // Load the A_ matrix
     floatreal A_[row * row];
-    memcpy(A_, A, row * row * sizeof(float));
+    memcpy(A_, A, row * row * sizeof(double));
     tran(A_, row, row);
 
     LWORK = -1; // This will load values
@@ -60,7 +60,7 @@ void eig(float* A, float* Ereal, float* Eimag, float* Vreal_left, float* Vimag_l
     loadVector(N, WI, VR, Vreal_right, Vimag_right);
 }
 
-void loadEigen(integer N, floatreal* WR, floatreal* WI, float* Ereal, float* Eimag) {
+void loadEigen(integer N, floatreal* WR, floatreal* WI, double* Ereal, double* Eimag) {
 
     for (int j = 0; j < N; j++) {
 // TODO: fix these pragmas
@@ -82,7 +82,7 @@ void loadEigen(integer N, floatreal* WR, floatreal* WI, float* Ereal, float* Eim
     }
 }
 
-void loadVector(integer N, floatreal* WI, floatreal* V, float* Vreal, float* Vimag) {
+void loadVector(integer N, floatreal* WI, floatreal* V, double* Vreal, double* Vimag) {
 
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {

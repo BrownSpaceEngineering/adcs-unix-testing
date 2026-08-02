@@ -11,7 +11,7 @@
  * C with row_a x column_b
  */
 
-void mul(float* A, float* B, bool elementWise, float* C, int row_a, int column_a, int column_b) {
+void mul(double* A, double* B, bool elementWise, double* C, int row_a, int column_a, int column_b) {
 
     /*
      * C = A*B if elementWise = false
@@ -19,9 +19,9 @@ void mul(float* A, float* B, bool elementWise, float* C, int row_a, int column_a
      */
 
     // Data matrix
-    float* data_a = A;
-    float* data_b = B;
-    // float* C = C; // No need
+    double* data_a = A;
+    double* data_b = B;
+    // double* C = C; // No need
 
     if (elementWise == true) {
 
@@ -66,7 +66,7 @@ void mul(float* A, float* B, bool elementWise, float* C, int row_a, int column_a
     }
 }
 
-void mulf(float* A, float* B, bool elementWise, float* C, int row_a, int column_a, int column_b) {
+void mulf(double* A, double* B, bool elementWise, double* C, int row_a, int column_a, int column_b) {
 
     /*
      * C = A*B if elementWise = false
@@ -74,9 +74,9 @@ void mulf(float* A, float* B, bool elementWise, float* C, int row_a, int column_
      */
 
     // Data matrix
-    float* data_a = A;
-    float* data_b = B;
-    // float* C = C; // No need
+    double* data_a = A;
+    double* data_b = B;
+    // double* C = C; // No need
 
     if (elementWise == true) {
 
