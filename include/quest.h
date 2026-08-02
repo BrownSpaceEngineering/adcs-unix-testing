@@ -1,4 +1,4 @@
 #ifndef QUEST
 #define QUEST
-void quest(float* body, float* ref, int msmt_ct, float* result);//gives body->ref
+void quest(double* body, double* ref, int msmt_ct, double* result);//gives body->ref
 #endif

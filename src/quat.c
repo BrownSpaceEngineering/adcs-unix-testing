@@ -119,7 +119,6 @@ void quat2rotm(double* q, double* rotm){
     double qz = q[3];
 
     // Precompute repeated terms
-    double qw2 = qw * qw;
     double qx2 = qx * qx;
     double qy2 = qy * qy;
     double qz2 = qz * qz;
@@ -151,7 +150,7 @@ void rotm_to_quat(double*R, double*q)
     if (trace > 0.0)
     {
         double s = sqrt(trace + 1.0) * 2.0; // s = 4*qw
-        q[0] = 0.25f * s;
+        q[0] = 0.25 * s;
         q[1] = (R[7] - R[5]) / s;
         q[2] = (R[2] - R[6]) / s;
         q[3] = (R[3] - R[1]) / s;
@@ -160,7 +159,7 @@ void rotm_to_quat(double*R, double*q)
     {
         double s = sqrt(1.0 + R[0] - R[4] - R[8]) * 2.0; // s = 4*qx
         q[0] = (R[7] - R[5]) / s;
-        q[1] = 0.25f * s;
+        q[1] = 0.25 * s;
         q[2] = (R[1] + R[3]) / s;
         q[3] = (R[2] + R[6]) / s;
     }
@@ -169,7 +168,7 @@ void rotm_to_quat(double*R, double*q)
         double s = sqrt(1.0 + R[4] - R[0] - R[8]) * 2.0; // s = 4*qy
         q[0] = (R[2] - R[6]) / s;
         q[1] = (R[1] + R[3]) / s;
-        q[2] = 0.25f * s;
+        q[2] = 0.25 * s;
         q[3] = (R[5] + R[7]) / s;
     }
     else
@@ -178,7 +177,7 @@ void rotm_to_quat(double*R, double*q)
         q[0] = (R[3] - R[1]) / s;
         q[1] = (R[2] + R[6]) / s;
         q[2] = (R[5] + R[7]) / s;
-        q[3] = 0.25f * s;
+        q[3] = 0.25 * s;
     }
 
     // Optional: normalize to protect against numerical drift

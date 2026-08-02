@@ -5,49 +5,48 @@
 const int NUM_PAIRS = 9;
 const int NUM_SELECTED_DIODES = 5;
 
+const double MAX_READING = 1.7;
+const double MIN_READING = 0.17;
+const double PHOTODIODES[18][3] = {
+    {  0.8660254,  -0.27968387, -0.41445981 },
+    { -0.8660254,   0.27968387,  0.41445981 },
 
-const float MAX_READING = 1.7f;
-const float MIN_READING = 0.17f;
-const float PHOTODIODES[18][3] = {
-    {  0.8660254f,  -0.27968387f, -0.41445981f },
-    { -0.8660254f,   0.27968387f,  0.41445981f },
+    {  0.8660254,  -0.16748457,  0.47111455 },
+    { -0.8660254,   0.16748457, -0.47111455 },
 
-    {  0.8660254f,  -0.16748457f,  0.47111455f },
-    { -0.8660254f,   0.16748457f, -0.47111455f },
+    {  0.8660254,   0.4999767,   0.00482655 },
+    { -0.8660254,  -0.4999767,  -0.00482655 },
 
-    {  0.8660254f,   0.4999767f,   0.00482655f },
-    { -0.8660254f,  -0.4999767f,  -0.00482655f },
+    { -0.07387608,  0.8660254,   0.49451221 },
+    {  0.07387608, -0.8660254,  -0.49451221 },
 
-    { -0.07387608f,  0.8660254f,   0.49451221f },
-    {  0.07387608f, -0.8660254f,  -0.49451221f },
+    { -0.48736734,  0.8660254,  -0.11168291 },
+    {  0.48736734, -0.8660254,   0.11168291 },
 
-    { -0.48736734f,  0.8660254f,  -0.11168291f },
-    {  0.48736734f, -0.8660254f,   0.11168291f },
+    {  0.32616791,  0.8660254,  -0.37896503 },
+    { -0.32616791, -0.8660254,   0.37896503 },
 
-    {  0.32616791f,  0.8660254f,  -0.37896503f },
-    { -0.32616791f, -0.8660254f,   0.37896503f },
+    { -0.36819159, -0.33828235, -0.8660254  },
+    {  0.36819159,  0.33828235,  0.8660254  },
 
-    { -0.36819159f, -0.33828235f, -0.8660254f  },
-    {  0.36819159f,  0.33828235f,  0.8660254f  },
+    {  0.48601695,  0.1174203,  -0.8660254  },
+    { -0.48601695, -0.1174203,   0.8660254  },
 
-    {  0.48601695f,  0.1174203f,  -0.8660254f  },
-    { -0.48601695f, -0.1174203f,   0.8660254f  },
-
-    { -0.23581003f,  0.44090093f, -0.8660254f  },
-    {  0.23581003f, -0.44090093f,  0.8660254f  }
+    { -0.23581003,  0.44090093, -0.8660254  },
+    {  0.23581003, -0.44090093,  0.8660254  }
 };
 
 // Assumes photodiode_readings are passed in the same order as PHOTODIODES.
 // Pairs are 0-1, 2-3, ..., 16-17.
-bool get_vec_from_photodiode_readings(float* photodiode_readings,
-                                      float* estimated_sun_vector) {
+bool get_vec_from_photodiode_readings(double* photodiode_readings,
+                                      double* estimated_sun_vector) {
     int valid_readings = 0;
     int selected_indices[NUM_SELECTED_DIODES];
-    float selected_readings[NUM_SELECTED_DIODES];
+    double selected_readings[NUM_SELECTED_DIODES];
 
     for (int i = 0; i < NUM_SELECTED_DIODES; i++) {
         selected_indices[i] = -1;
-        selected_readings[i] = -1.0f;
+        selected_readings[i] = -1.0;
     }
 
     // For each pair, choose the brighter diode.
@@ -57,7 +56,7 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
         int i1 = 2 * pair + 1;
 
         int brighter_index;
-        float brighter_reading;
+        double brighter_reading;
 
         if (photodiode_readings[i0] >= photodiode_readings[i1]) {
             brighter_index = i0;
@@ -89,9 +88,8 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
     }
 
     // Construct system of equations
-
-    float A[NUM_SELECTED_DIODES * 3];
-    float b[NUM_SELECTED_DIODES];
+    double A[NUM_SELECTED_DIODES * 3];
+    double b[NUM_SELECTED_DIODES];
 
     for (int i = 0; i < NUM_SELECTED_DIODES; i++) {
         int diode_index = selected_indices[i];
@@ -107,14 +105,10 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
     pinv(A, NUM_SELECTED_DIODES, 3);
 
     // Solving using inverse
-    mul(A, b, false,
-        estimated_sun_vector,
-        3,
-        NUM_SELECTED_DIODES,
-        1);
+    mul(A, b, false, estimated_sun_vector, 3, NUM_SELECTED_DIODES, 1);
 
     // Normalize output vector
-    float mag = sqrtf(
+    double mag = sqrt(
         estimated_sun_vector[0] * estimated_sun_vector[0] +
         estimated_sun_vector[1] * estimated_sun_vector[1] +
         estimated_sun_vector[2] * estimated_sun_vector[2]
@@ -125,4 +119,5 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
     estimated_sun_vector[2] /= mag;
 
     return true;
+
 }

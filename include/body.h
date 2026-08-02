@@ -6,36 +6,32 @@
 #ifndef NULLPTR
 #define NULLPTR 0x0
 #endif
-extern float PVD_ECEF[3];
-extern const float DETUMBLING_MAG_THRESHOLD;
-extern const float DETUMBLING_GYRO_THRESHOLD;
-extern float Imax[3];
-extern const float INIT_P[6 * 6];
-extern const float Q[6 * 6];
-extern const float R_IN_SUN[6 * 6];
-extern const float R_IN_SHADOW[3 * 3];
+extern double PVD_ECEF[3];
+extern const double DETUMBLING_MAG_THRESHOLD;
+extern const double DETUMBLING_GYRO_THRESHOLD;
+extern double Imax[3];
+extern const double INIT_P[6 * 6];
+extern const double Q[6 * 6];
+extern const double R_IN_SUN[6 * 6];
+extern const double R_IN_SHADOW[3 * 3];
 
-static float kepler_posn[6];
-static float estimated_quat[4];
-static float estimated_gyro_bias[3];
-static float error_quat_state[6];
-static float error_quat_cov[6 * 6];
+static double kepler_posn[6];
+static double estimated_quat[4];
+static double error_quat_state[6];
+static double error_quat_cov[6 * 6];
 
-static float last_ref_magnetosphere[3];
-
-static bool last_ref_magnetosphere_initialized = false;
 static bool pointing = false;
 static bool posn_initialized = false;
-static bool attitude_initialized = false;
+static int  filter_step = 0;
 
-void body(float* last_magnetometer_measurements, //1x3
-    float* magnetometer_measurements,  //1x3
-    float* gyro_measurements, //1x3, radians
-    float* photodiode_measurements, //1xNUM_DIODES, raw readings
-    float* posn_update,//1x6, may be NULLPTR
+void body(double* last_magnetometer_measurements, //1x3
+    double* magnetometer_measurements,  //1x3
+    double* gyro_measurements, //1x3, radians
+    double* photodiode_measurements, //1xNUM_DIODES, raw readings
+    double* posn_update,//1x6, may be NULLPTR
     int unix,//unix time
     int jd_scalar,
-    float jd_frac,
-    float dt,//time since last update
-    float* output_currents);//1x3
+    double jd_frac,
+    double dt,//time since last update
+    double* output_currents);//1x3
 #endif

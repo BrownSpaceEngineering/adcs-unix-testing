@@ -1,4 +1,4 @@
 #ifndef ORBITAL2ECI
 #define ORBITAL2ECI
-void orbitalToECI(float* kepler6, float* eci);
+void orbitalToECI(double* kepler6, double* eci);
 #endif

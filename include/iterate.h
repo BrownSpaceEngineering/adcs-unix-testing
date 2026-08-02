@@ -10,6 +10,6 @@ static const double BETA = 2.0;
 // body and ref are 3*num_vecs doubles; R is (3*num_vecs)x(3*num_vecs); pass NULL when num_vecs=0
 void iterate(double* error_state, double* quat_state, double* cov,
              double* body, double* ref, int num_vecs,
-             double* gyro, double* Q, double* R, double dt,
+             double* gyro, const double* Q, const double* R, double dt,
              double* new_err_state, double* new_quat_state, double* new_P);
 #endif

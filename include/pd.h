@@ -1,4 +1,4 @@
 #ifndef PD_H
 #define PD_H
-void PD_loop(float* r_e, float* r_omega, float* torque); 
+void PD_loop(double* r_e, double* r_omega, double* torque);
 #endif

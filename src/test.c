@@ -27,42 +27,48 @@ void test_run_all(void) {
 }
 
 void test_quest(void){
-    float true_ref_to_body[4] = {0.78355, 0.44793, 0.32448, 0.28304};
-    float true_body_to_ref[4];
+    // All linalg functions (quat_apply, quat_inv, f_eps_close_matrix, print, quest, etc.) take double*.
+    double true_ref_to_body[4] = {0.78355, 0.44793, 0.32448, 0.28304};
+    // QUEST returns the body-to-ref quaternion (see quest.h comment "gives body->ref").
+    double true_body_to_ref[4];
     quat_inv(true_ref_to_body, true_body_to_ref);
-    float ref_1[3] = {1, 2, 3};
-    float ref_2[3] = {-4,3, -6};
-    float ref[6] = {1,2,3,-4,3,-6};
 
-    float body_1[3];
+    double ref_1[3] = {1, 2, 3};
+    double ref_2[3] = {-4, 3, -6};
+
+    // Generate noiseless body-frame measurements: body = q * ref * q^-1
+    double body_1[3], body_2[3];
     quat_apply(true_ref_to_body, ref_1, body_1);
-    float body_2[3];
     quat_apply(true_ref_to_body, ref_2, body_2);
-    float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
 
-    float guess[4];
+    double body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
+    double ref[6]  = {1, 2, 3, -4, 3, -6};
+
+    double guess[4];
     quest(body, ref, 2, guess);
 
-    if (f_eps_close_matrix(guess, true_body_to_ref, 1, 4, 1e-4)) {
+    // q and -q represent the same rotation — accept either sign.
+    double neg_guess[4] = {-guess[0], -guess[1], -guess[2], -guess[3]};
+    bool pos_match = f_eps_close_matrix(guess,     true_body_to_ref, 1, 4, 1e-4);
+    bool neg_match = f_eps_close_matrix(neg_guess, true_body_to_ref, 1, 4, 1e-4);
+
+    if (pos_match || neg_match) {
         printf("QuEST Test Passed\n");
-        print(guess, 1, 4);
-        print(true_body_to_ref, 1, 4);
     } else {
         printf("QuEST Test Failed\n");
-        print(guess, 1, 4);
-        print(true_body_to_ref, 1, 4);
     }
-
+    printf("  guess:    "); print(pos_match ? guess : neg_guess, 1, 4);
+    printf("  expected: "); print(true_body_to_ref, 1, 4);
 }
 void test_matrix_product(void) {
 
     printf("----- testing matrix product -----\n");
 
     // test case for 2*2 matrix product
-    float A[4] = {1., 2., 3., 4.};
-    float B[4] = {5., 6., 7., 8.};
-    float C[4] = {0.};
-    float C_expected[4] = {19., 22., 43., 50.};
+    double A[4] = {1., 2., 3., 4.};
+    double B[4] = {5., 6., 7., 8.};
+    double C[4] = {0.};
+    double C_expected[4] = {19., 22., 43., 50.};
 
     mul(A, B, false, C, 2, 2, 2);
     debug_matrix(C, 2, 2);
@@ -74,8 +80,8 @@ void test_matrix_product(void) {
     }
 
     // 4*4 identity matrix test
-    float identity[4 * 4] = {0.};
-    float large_result[4 * 4] = {0.};
+    double identity[4 * 4] = {0.};
+    double large_result[4 * 4] = {0.};
 
     eye(identity, 4, 4);
 
@@ -87,7 +93,7 @@ void test_matrix_product(void) {
         printf("Identity matrix squared test failed!\n");
     }
 
-    float A_large[4 * 4] = {1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.};
+    double A_large[4 * 4] = {1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.};
 
     mul(A_large, identity, false, large_result, 4, 4, 4);
 
@@ -105,13 +111,13 @@ void test_matrix_product(void) {
         printf("Identity pre-multiplication test failed!\n");
     }
 
-    float B_large[4 * 4] = {5.24829, 6.21496, 3.27374, 3.49223, 1.52040, 3.70849, 7.21884, 0.41667,
+    double B_large[4 * 4] = {5.24829, 6.21496, 3.27374, 3.49223, 1.52040, 3.70849, 7.21884, 0.41667,
                             7.77438, 8.24807, 8.63347, 2.01096, 8.29170, 1.46735, 8.53606, 5.14221};
 
-    float C_large[4 * 4] = {1.92304, 0.14043, 1.64762, 4.97396, 0.68077, 4.99275, 7.04041, 2.44857,
+    double C_large[4 * 4] = {1.92304, 0.14043, 1.64762, 4.97396, 0.68077, 4.99275, 7.04041, 2.44857,
                             8.22049, 1.66745, 7.94150, 0.56302, 2.68638, 7.59450, 1.43236, 3.59834};
 
-    float large_multiplication_expected[4 * 4]
+    double large_multiplication_expected[4 * 4]
         = {50.6168, 63.7473, 83.4036, 55.732,  65.9102, 33.9305, 86.5396, 22.2066,
            96.939,  71.9404, 142.322, 70.9624, 100.929, 61.7765, 99.1469, 68.1449};
 
@@ -126,14 +132,13 @@ void test_matrix_product(void) {
 
 void test_quaternion(void) {
     // Multiplication Tests
-    float res_quat[4];
-    float res_vec[3];
-    float test_qd[4];
+    double res_quat[4];
+    double res_vec[3];
 
     // Identity
-    float id_quat[4] = {1, 0, 0, 0};
+    double id_quat[4] = {1, 0, 0, 0};
     quat_multiply(id_quat, id_quat, res_quat);
-    float expected_res_id[4] = {1, 0, 0, 0};
+    double expected_res_id[4] = {1, 0, 0, 0};
     if (f_eps_close_matrix(res_quat, expected_res_id, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Multiplication Identity Test Passed\n");
     } else {
@@ -141,10 +146,10 @@ void test_quaternion(void) {
     }
 
     // Random Pair
-    float rp_quat_1[4] = {0.59513523, 0.53820488, 0.00657071, 0.5967465};
-    float rp_quat_2[4] = {0.78805728, 0.07242287, 0.48362778, 0.37393157};
+    double rp_quat_1[4] = {0.59513523, 0.53820488, 0.00657071, 0.5967465};
+    double rp_quat_2[4] = {0.78805728, 0.07242287, 0.48362778, 0.37393157};
     quat_multiply(rp_quat_1, rp_quat_2, res_quat);
-    float expected_res_rp[4] = {0.203702175001, 0.181091486099, 0.134968324367, 0.952625236179};
+    double expected_res_rp[4] = {0.203702175001, 0.181091486099, 0.134968324367, 0.952625236179};
     if (f_eps_close_matrix(res_quat, expected_res_rp, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Multiplication Random Pair Test Passed\n");
     } else {
@@ -153,7 +158,7 @@ void test_quaternion(void) {
 
     // Reverse Random Pair
     quat_multiply(rp_quat_2, rp_quat_1, res_quat);
-    float expected_res_rp_inv[4] = {0.203702175001, 0.753383864322, 0.451035727503, 0.432995312932};
+    double expected_res_rp_inv[4] = {0.203702175001, 0.753383864322, 0.451035727503, 0.432995312932};
     if (f_eps_close_matrix(res_quat, expected_res_rp_inv, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Multiplication Reverse Random Pair Test Passed\n");
     } else {
@@ -161,8 +166,8 @@ void test_quaternion(void) {
     }
 
     // Test normalization
-    float unnorm_quat[4] = {0.44245429, 0.97492992, 0.24490942, 0.74845996};
-    float expected_norm_quat[4] = {0.33290518, 0.73354294, 0.18427127, 0.56314562};
+    double unnorm_quat[4] = {0.44245429, 0.97492992, 0.24490942, 0.74845996};
+    double expected_norm_quat[4] = {0.33290518, 0.73354294, 0.18427127, 0.56314562};
     quat_norm(unnorm_quat, res_quat);
     if (f_eps_close_matrix(res_quat, expected_norm_quat, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Normalization Test Passed\n");
@@ -171,8 +176,8 @@ void test_quaternion(void) {
     }
 
     // Test inversion
-    float quat_to_invert[4] = {7, 4, 5, 9};
-    float expected_inverted_quat[4] = {0.0409357, -0.0233918, -0.0292398, -0.0526316};
+    double quat_to_invert[4] = {7, 4, 5, 9};
+    double expected_inverted_quat[4] = {0.0409357, -0.0233918, -0.0292398, -0.0526316};
     quat_inv(quat_to_invert, res_quat);
     if (f_eps_close_matrix(res_quat, expected_inverted_quat, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Inversion Test Passed\n");
@@ -181,7 +186,7 @@ void test_quaternion(void) {
     }
 
     // Test quat2rotvec using one of the random pair quaternions
-    float expected_rp_1_rotvec[3] = {1.2502, 0.0153, 1.3862};
+    double expected_rp_1_rotvec[3] = {1.2502, 0.0153, 1.3862};
     quat2rotationvec(rp_quat_1, res_vec);
     if (f_eps_close_matrix(res_vec, expected_rp_1_rotvec, 1, 3, 1e-4)) {
         printf("Quaternion2RotVec Test Passed\n");
@@ -190,7 +195,7 @@ void test_quaternion(void) {
     }
 
     // Test quat_diff using the random pair quats from before
-    float expected_quat_diff[4] = {0.7343, -0.66718, 0.12461, 0.012084};
+    double expected_quat_diff[4] = {0.7343, -0.66718, 0.12461, 0.012084};
     quat_diff(rp_quat_1, rp_quat_2, res_quat);
     if (f_eps_close_matrix(res_quat, expected_quat_diff, 1, 4, 1e-4)) {
         printf("Quaternion Diff Test Passed\n");
@@ -199,7 +204,7 @@ void test_quaternion(void) {
     }
 
     // Test the robustness of quatdiff
-    float robustness_test[4];
+    double robustness_test[4];
     quat_multiply(res_quat, rp_quat_1, robustness_test);
     if (f_eps_close_matrix(robustness_test, rp_quat_2, 1, 4, 1e-4)) {
         printf("Quaternion Robustness Test Passed\n");
@@ -208,8 +213,8 @@ void test_quaternion(void) {
     }
 
     // Test Rotation Vec --> Quat
-    float random_vec[3] = {0.96667295, 0.7002543, 0.61082435};
-    float expected_quat_conv[4] = {0.78355, 0.44793, 0.32448, 0.28304};
+    double random_vec[3] = {0.96667295, 0.7002543, 0.61082435};
+    double expected_quat_conv[4] = {0.78355, 0.44793, 0.32448, 0.28304};
     rotationvec2quat(random_vec, res_quat);
     if (f_eps_close_matrix(res_quat, expected_quat_conv, 1, 4, 1e-4)) {
         printf("RotVec2Quat Test Passed\n");
@@ -218,7 +223,7 @@ void test_quaternion(void) {
     }
 
     // Test quat apply
-    float expected_rotated_vec[3] = {0.1828, 0.1028, 1.3244};
+    double expected_rotated_vec[3] = {0.1828, 0.1028, 1.3244};
     quat_apply(rp_quat_1, random_vec, res_vec);
     if (f_eps_close_matrix(res_vec, expected_rotated_vec, 1, 3, 1e-4)) {
         printf("Quat Apply Test Passed\n");
@@ -227,10 +232,6 @@ void test_quaternion(void) {
         printf("Got: %f, %f, %f\n", res_vec[0], res_vec[1], res_vec[2]);
     }
 }
-
-void test_iteration_2vec(void){ /* unused – replaced by test_long */ }
-
-void test_iteration_1vec(void){ /* unused - replaced by test_long */ }
 
 void test_long(void){
     // ── simulation parameters (mirrors MUKF_FINAL.py) ─────────────────────────
@@ -252,10 +253,13 @@ void test_long(void){
     }
 
     double R_2vec[36] = {0};
+    /* Magnetometer noise (3×3 top-left block); conservatively inflated above sigma_mag^2 = 1e-6 */
     R_2vec[0]  = 2e-5; R_2vec[7]  = 2e-5; R_2vec[14] = 2e-5;
+    /* Sun-vector noise (3×3 bottom-right block); matches sigma_sun^2 = 1e-4 */
     R_2vec[21] = 1e-4; R_2vec[28] = 1e-4; R_2vec[35] = 1e-4;
 
     double R_1vec[9] = {0};
+    /* Magnetometer noise (3×3); same value as the 2-vec magnetometer block */
     R_1vec[0] = 2e-5; R_1vec[4] = 2e-5; R_1vec[8] = 2e-5;
 
     // ── orbital parameters ──────────────────────────────────────────────────────
@@ -304,6 +308,9 @@ void test_long(void){
     cov[21] = 0.01; cov[28] = 0.01; cov[35] = 0.01;
 
     int vector_mode = 1;
+
+    double sum_err_1v = 0.0, sum_err_2v = 0.0;
+    long   count_1v   = 0,   count_2v   = 0;
 
     for(int i = 0; i < simulation_time; i++){
         if(i > 0 && i % switch_every == 0){
@@ -405,21 +412,27 @@ void test_long(void){
         memcpy(cov, new_cov, sizeof(double) * 36);
         memcpy(current_quat, new_quat, sizeof(double) * 4);
         quat_norm(current_quat, current_quat);
-
+        double err_q[4];
+        quat_diff(true_quat, current_quat, err_q);
+        double err_vec[3];
+        quat2rotationvec(err_q, err_vec);
+        double err_deg = (180.0 / (double)M_PI) * l2_norm(err_vec, 3);
+        double time_s = i * dt;
+        double be[3] = {state[3]-true_bias[0], state[4]-true_bias[1], state[5]-true_bias[2]};
+        if(vector_mode == 1){ sum_err_1v += err_deg; count_1v++; }
+        else                { sum_err_2v += err_deg; count_2v++; }
         if(i % 1000 == 0){
-            double err_q[4];
-            quat_diff(true_quat, current_quat, err_q);
-            double err_vec[3];
-            quat2rotationvec(err_q, err_vec);
-            double err_deg = (180.0 / (double)M_PI) * l2_norm(err_vec, 3);
-            double time_s = i * dt;
-            double be[3] = {state[3]-true_bias[0], state[4]-true_bias[1], state[5]-true_bias[2]};
             printf("%5.0f s | Mode: %dv | att: %6.3f deg"
-                   " | bias est [%+7.5f %+7.5f %+7.5f]"
-                   " | bias err [%+7.5f %+7.5f %+7.5f] rad/s\n",
-                   time_s, vector_mode, err_deg,
-                   state[3], state[4], state[5],
-                   be[0], be[1], be[2]);
+                " | bias est [%+7.5f %+7.5f %+7.5f]"
+                " | bias err [%+7.5f %+7.5f %+7.5f] rad/s\n",
+                time_s, vector_mode, err_deg,
+                state[3], state[4], state[5],
+                be[0], be[1], be[2]);
         }
     }
+    printf("\n--- Mean attitude error ---\n");
+    printf("  1-vector (eclipse): %.4f deg  (n=%ld)\n",
+           count_1v > 0 ? sum_err_1v / count_1v : 0.0, count_1v);
+    printf("  2-vector (sun):     %.4f deg  (n=%ld)\n",
+           count_2v > 0 ? sum_err_2v / count_2v : 0.0, count_2v);
 }

@@ -16,6 +16,9 @@ list(APPEND SRC src/main.c src/test.c src/quat.c src/laextension.c src/bdot.c sr
 set(CMAKE_C_FLAGS_DEBUG "-Wall -Wextra -Wpedantic -g" CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 
+# Always-on warnings (independent of build type)
+add_compile_options(-Wall -Wextra -Wpedantic)
+
 add_executable(${EXECUTABLE} ${SRC})
 target_include_directories(${EXECUTABLE} PRIVATE .)
 target_include_directories(${EXECUTABLE} PRIVATE linalg

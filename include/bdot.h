@@ -1,4 +1,4 @@
 #ifndef BDOT
 #define BDOT
-void Bdot(float* M_T, float* M_TMINUS1, float dT, float* moments);
+void Bdot(double* M_T, double* M_TMINUS1, double dT, double* moments);
 #endif
