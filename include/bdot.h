@@ -1,4 +1,8 @@
-#ifndef BDOT
-#define BDOT
-void Bdot(float* M_T, float* M_TMINUS1, float dT, float* moments);
-#endif
+#ifndef BDOT_H
+#define BDOT_H
+
+#include "arm_math.h"
+
+void Bdot(float32_t* M_T, float32_t* M_TMINUS1, float32_t dT, float32_t* moments); 
+
+#endif // BDOT_H

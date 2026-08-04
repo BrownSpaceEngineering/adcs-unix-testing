@@ -3,7 +3,7 @@
 #include "arm_math.h"
 
 /**
- * \fn propogate_orbital_elements
+ * \fn propogateOrbitalElements
  *
  * \brief Propogate orbital elements using Kepler's equation
  * 
@@ -18,7 +18,7 @@
  *
  * \return void
  */
-void propogate_orbital_elements(float32_t semi_major_axis, 
+void propogateOrbitalElements(float32_t semi_major_axis, 
                                 float32_t eccentricity, 
                                 float32_t inclination, 
                                 float32_t ascending_node, 
@@ -34,16 +34,21 @@ void propogate_orbital_elements(float32_t semi_major_axis,
 
     
     //convert true anomaly to eccentric anamoly
-    float32_t E =  2 * arm_atan2_f32(arm_sqrt_f32(1 - eccentricity) * arm_sin_f32(f/2), 
-                                     arm_sqrt_f32(1 + eccentricity) * arm_cos_f32(f/2));
-    
+    float32_t sqrt_1_minus_e, sqrt_1_plus_e;
+    arm_sqrt_f32(1 - eccentricity, &sqrt_1_minus_e);
+    arm_sqrt_f32(1 + eccentricity, &sqrt_1_plus_e);
+    float32_t E_atan2;
+    arm_atan2_f32(sqrt_1_minus_e * arm_sin_f32(f/2), sqrt_1_plus_e * arm_cos_f32(f/2), &E_atan2);
+    float32_t E = 2 * E_atan2;
+
     // atan2( sqrt(1 - e) * sin(f/2), sqrt(1 + e) * cos(f/2));
 
     //Get current true anomaly from Kepler's equation
     float32_t M = E - eccentricity * arm_sin_f32(E);
 
     //define mean motion
-    float32_t n = arm_sqrt_f32(u/pow(semi_major_axis, 3.0));
+    float32_t n;
+    arm_sqrt_f32(u/pow(semi_major_axis, 3.0), &n);
 
     //Find mean anomaly at T + dt
     float32_t M_new = M + n * time_delta;
@@ -72,8 +77,9 @@ void propogate_orbital_elements(float32_t semi_major_axis,
     output[4] = periapsis;
 
     //updated true anomaly from our updated eccentric anomaly
-    float new_true_anomaly = 2 * arm_atan2_f32(arm_sqrt_f32(1 + eccentricity) * arm_sin_f32(E_current/2), 
-                                               arm_sqrt_f32(1 - eccentricity) * arm_cos_f32(E_current/2));
+    float32_t new_atan2;
+    arm_atan2_f32(sqrt_1_plus_e * arm_sin_f32(E_current/2), sqrt_1_minus_e * arm_cos_f32(E_current/2), &new_atan2);
+    float new_true_anomaly = 2 * new_atan2;
     output[5] = new_true_anomaly * 180.0 / M_PI; //convert back to degrees
 
 }

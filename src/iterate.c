@@ -1,12 +1,13 @@
 #include "include/iterate.h"
 #include "Include/arm_math_types.h"
 #include "Include/dsp/matrix_functions.h"
+#include "Include/dsp/basic_math_functions.h"
 #include "include/laextension.h"
-#include "declareFunctions.h"
 #include "math.h"
 #include "include/quat.h"
 #include "arm_math.h"
 #include <assert.h>
+#include <string.h>
 
 /**
  * \fn ensure_psd
@@ -89,10 +90,8 @@ void get_sigma_points(float32_t lam, arm_matrix_instance_f32 *state, arm_matrix_
     float32_t *sigmas_data = sigmas->pData;
     float32_t *state_data = state->pData;
 
-    // scale(P1, lam + STATE_SIZE, STATE_SIZE, STATE_SIZE);
-    
-    // TODO: is this safe to do in-place? I think so, but 
-    // we should check the implementation of arm_mat_scale_f32 to be sure. 
+    // TODO: is this safe to do in-place? I think so, but
+    // we should check the implementation of arm_mat_scale_f32 to be sure.
     arm_mat_scale_f32(&P1, lam + STATE_SIZE, &P1);
 
     ensure_psd(&P1);
@@ -135,27 +134,22 @@ void get_sigma_points(float32_t lam, arm_matrix_instance_f32 *state, arm_matrix_
  * \param mean_weights Output array for mean weights (size NUM_SIGMAS).
  * 
  */
-void get_weights(float32_t lambda, 
-                 int n, 
-                 float32_t alpha, 
-                 float32_t beta, 
-                 arm_matrix_instance_f32 *cov_weights, 
-                 arm_matrix_instance_f32 *mean_weights) {
-  
+void get_weights(float32_t lambda,
+                 int n,
+                 float32_t alpha,
+                 float32_t beta,
+                 float32_t *cov_weights,
+                 float32_t *mean_weights) {
+
     float32_t c = (float32_t)0.5f / (n + lambda);
-    float32_t c_weights[NUM_SIGMAS];
-    float32_t m_weights[NUM_SIGMAS];
-    
+
     for(int i = 0; i< NUM_SIGMAS; i++){
-        c_weights[i] = c;
-        m_weights[i] = c;
+        cov_weights[i] = c;
+        mean_weights[i] = c;
     }
-    
-    // TODO: do we need to fill in dimensions of output matrices? 
-    c_weights[0] = lambda / (n + lambda) + (1 - alpha*alpha + beta);
-    m_weights[0] = lambda / (n + lambda);
-    memcpy(cov_weights->pData, c_weights, sizeof(float32_t) * NUM_SIGMAS);
-    memcpy(mean_weights->pData, m_weights, sizeof(float32_t) * NUM_SIGMAS);
+
+    cov_weights[0] = lambda / (n + lambda) + (1 - alpha*alpha + beta);
+    mean_weights[0] = lambda / (n + lambda);
 }
 
 /**
@@ -167,62 +161,31 @@ void get_weights(float32_t lambda,
  * \param current_guess Pointer to the current quaternion guess.
  * \param quat_sigmas Pointer to the output quaternion sigmas array.
  */
-void error_sigmas_to_quat_sigmas(arm_matrix_instance_f32 *error_sigmas, 
-                                 arm_matrix_instance_f32 *current_guess, 
-                                 arm_matrix_instance_f32*quat_sigmas){
-    
+void error_sigmas_to_quat_sigmas(float32_t *error_sigmas,
+                                 float32_t *current_guess,
+                                 float32_t *quat_sigmas){
+
     int n = NUM_SIGMAS;
-    float32_t q_data[n * (STATE_SIZE + 1)];
-    arm_matrix_instance_f32 q = {
-        .numRows = n,
-        .numCols = STATE_SIZE + 1,
-        .pData = q_data, 
-    };
-
-    float32_t error_rot_data[3];
-    arm_matrix_instance_f32 error_rot = {
-        .numRows = 3, 
-        .numCols = 1, 
-        .pData = error_rot_data, 
-    };
-
-    float32_t error_quat_data[4];
-    arm_matrix_instance_f32 error_quat = {
-        .numRows = 4,
-        .numCols = 1,
-        .pData = error_quat_data,
-    };
-
-    float32_t new_rotation_data[4];
-    arm_matrix_instance_f32 new_rotation = {
-        .numRows = 4,
-        .numCols = 1,
-        .pData = new_rotation_data,
-    };
-    
-    float32_t norm_rot_data[4];
-    arm_matrix_instance_f32 norm_rot = {
-        .numRows = 4,
-        .numCols = 1,
-        .pData = norm_rot_data,
-    };
 
     for(int i = 0; i<n; i++){
-        // float32_t error_rot[3] = {error_sigmas[i * STATE_SIZE],error_sigmas[i * STATE_SIZE + 1],error_sigmas[i * STATE_SIZE + 2]};
-        // float32_t error_quat[4];
+        float32_t error_rot[3] = {
+            error_sigmas[i * STATE_SIZE],
+            error_sigmas[i * STATE_SIZE + 1],
+            error_sigmas[i * STATE_SIZE + 2]
+        };
+        float32_t error_quat[4];
         rotationvec2quat(error_rot, error_quat);
-        // float32_t new_rotation[4];
+        float32_t new_rotation[4];
         quat_multiply(current_guess, error_quat, new_rotation);
-        // float32_t norm_rot[4];
+        float32_t norm_rot[4];
         quat_norm(new_rotation, norm_rot);
         for(int j = 0; j<4; j++){
-            q_data[i * (STATE_SIZE + 1) + j] = norm_rot_data[j];
+            quat_sigmas[i * (STATE_SIZE + 1) + j] = norm_rot[j];
         }
         for(int j = 4; j < STATE_SIZE + 1; j++){
-            q_data[i * (STATE_SIZE + 1) + j] = error_sigmas->pData[i * STATE_SIZE + (j - 1)];
+            quat_sigmas[i * (STATE_SIZE + 1) + j] = error_sigmas[i * STATE_SIZE + (j - 1)];
         }
     }
-    memcpy(quat_sigmas, q.pData, sizeof(float32_t) * n * (STATE_SIZE + 1));
 }
 
 /**
@@ -248,9 +211,9 @@ void propagate_sigmas(float* quat_sigmas, float* gyro, float dt, float* propagat
             bias[j - 4] = quat_sigmas[offset + j];
         }
         float omega[3];
-        scale(bias, -1, 1, 3);
-        add(gyro, bias, omega, 1, 3, 3);
-        scale(omega, dt, 1, 3);
+        arm_scale_f32(bias, -1.0f, bias, 3);
+        arm_add_f32(gyro, bias, omega, 3);
+        arm_scale_f32(omega, dt, omega, 3);
         float delta_q[4];
         rotationvec2quat(omega, delta_q);
 
@@ -344,14 +307,18 @@ void grad_descent(float* propagated_quats, float* current_quat, float* avg_quat,
 void iterate(float* error_state, float* quat_state, float* cov, float* body, float* ref, float* gyro, float* Q, float* R, float dt, float* new_err_state, float* new_quat_state, float* new_P){
     float P[STATE_SIZE * STATE_SIZE];
     memcpy(P, cov, sizeof(float) * STATE_SIZE * STATE_SIZE);
-    
-    ensure_psd(P, STATE_SIZE);
+
+    arm_matrix_instance_f32 P_mat = {STATE_SIZE, STATE_SIZE, P};
+    ensure_psd(&P_mat);
 
     float lambda = calculate_lambda(STATE_SIZE, ALPHA);
     float P_Q[STATE_SIZE * STATE_SIZE];
-    add(P, Q, P_Q, STATE_SIZE, STATE_SIZE, STATE_SIZE);
+    arm_add_f32(P, Q, P_Q, STATE_SIZE * STATE_SIZE);
     float error_sigmas[STATE_SIZE * NUM_SIGMAS];
-    get_sigma_points(lambda, error_state, P_Q, error_sigmas);
+    arm_matrix_instance_f32 error_state_mat = {STATE_SIZE, 1, error_state};
+    arm_matrix_instance_f32 P_Q_mat = {STATE_SIZE, STATE_SIZE, P_Q};
+    arm_matrix_instance_f32 error_sigmas_mat = {STATE_SIZE, NUM_SIGMAS, error_sigmas};
+    get_sigma_points(lambda, &error_state_mat, &P_Q_mat, &error_sigmas_mat);
     float quat_sigmas[(STATE_SIZE + 1) * NUM_SIGMAS];
     error_sigmas_to_quat_sigmas(error_sigmas, quat_state, quat_sigmas);
     float propagated_sigmas[(STATE_SIZE + 1) * NUM_SIGMAS];
@@ -411,14 +378,13 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
         for(int j = 0; j< STATE_SIZE; j++){
             err[j] = propagated_errors[i * STATE_SIZE + j] - mean_err[j];
         }
-        float errT[STATE_SIZE];
-        memcpy(errT, err, sizeof(float) * STATE_SIZE);
         float errTerr[STATE_SIZE * STATE_SIZE];
-        mul(errT, err, false, errTerr, STATE_SIZE, 1, STATE_SIZE);
-        scale(errTerr, cov_weights[i], STATE_SIZE, STATE_SIZE);
-        float new_P_hat[STATE_SIZE * STATE_SIZE];
-        add(P_hat, errTerr, new_P_hat, STATE_SIZE, STATE_SIZE, STATE_SIZE);
-        memcpy(P_hat, new_P_hat, sizeof(float) * STATE_SIZE * STATE_SIZE);
+        arm_matrix_instance_f32 err_col_mat = {STATE_SIZE, 1, err};
+        arm_matrix_instance_f32 err_row_mat = {1, STATE_SIZE, err};
+        arm_matrix_instance_f32 errTerr_mat = {STATE_SIZE, STATE_SIZE, errTerr};
+        arm_mat_mult_f32(&err_col_mat, &err_row_mat, &errTerr_mat);
+        arm_scale_f32(errTerr, cov_weights[i], errTerr, STATE_SIZE * STATE_SIZE);
+        arm_add_f32(P_hat, errTerr, P_hat, STATE_SIZE * STATE_SIZE);
     }
 
     float P_xz[STATE_SIZE * MSMT_SIZE] = {0};
@@ -432,13 +398,14 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
         for(int j = 0; j<MSMT_SIZE; j++){
             msmt_err[j] = sigma_msmts[i * MSMT_SIZE + j] - mean_msmt[j];
         }
-        
+
         float errT_msmterr[STATE_SIZE * MSMT_SIZE];
-        mul(errT, msmt_err, false, errT_msmterr, STATE_SIZE, 1, MSMT_SIZE);
-        scale(errT_msmterr, cov_weights[i], STATE_SIZE, MSMT_SIZE);
-        float new_P_xz[STATE_SIZE * MSMT_SIZE];
-        add(P_xz, errT_msmterr, new_P_xz, STATE_SIZE, MSMT_SIZE, MSMT_SIZE);
-        memcpy(P_xz, new_P_xz, sizeof(float) * STATE_SIZE * MSMT_SIZE);
+        arm_matrix_instance_f32 errT_col_mat = {STATE_SIZE, 1, errT};
+        arm_matrix_instance_f32 msmt_err_row_mat = {1, MSMT_SIZE, msmt_err};
+        arm_matrix_instance_f32 errT_msmterr_mat = {STATE_SIZE, MSMT_SIZE, errT_msmterr};
+        arm_mat_mult_f32(&errT_col_mat, &msmt_err_row_mat, &errT_msmterr_mat);
+        arm_scale_f32(errT_msmterr, cov_weights[i], errT_msmterr, STATE_SIZE * MSMT_SIZE);
+        arm_add_f32(P_xz, errT_msmterr, P_xz, STATE_SIZE * MSMT_SIZE);
     }
 
     float P_zz[MSMT_SIZE * MSMT_SIZE] = {0};
@@ -447,53 +414,59 @@ void iterate(float* error_state, float* quat_state, float* cov, float* body, flo
         for(int j = 0; j<MSMT_SIZE; j++){
             msmt_err[j] = sigma_msmts[i * MSMT_SIZE + j] - mean_msmt[j];
         }
-        float msmtT[MSMT_SIZE];
-        memcpy(msmtT, msmt_err, sizeof(float) * MSMT_SIZE);
         float msmtTmsmt[MSMT_SIZE * MSMT_SIZE];
-        mul(msmtT, msmt_err, false, msmtTmsmt, MSMT_SIZE, 1, MSMT_SIZE);
-        scale(msmtTmsmt, cov_weights[i], MSMT_SIZE, MSMT_SIZE);
-        float new_P_zz[MSMT_SIZE * MSMT_SIZE];
-        add(P_zz, msmtTmsmt, new_P_zz, MSMT_SIZE, MSMT_SIZE, MSMT_SIZE);
-        memcpy(P_zz, new_P_zz, sizeof(float) * MSMT_SIZE * MSMT_SIZE);
+        arm_matrix_instance_f32 msmt_col_mat = {MSMT_SIZE, 1, msmt_err};
+        arm_matrix_instance_f32 msmt_row_mat = {1, MSMT_SIZE, msmt_err};
+        arm_matrix_instance_f32 msmtTmsmt_mat = {MSMT_SIZE, MSMT_SIZE, msmtTmsmt};
+        arm_mat_mult_f32(&msmt_col_mat, &msmt_row_mat, &msmtTmsmt_mat);
+        arm_scale_f32(msmtTmsmt, cov_weights[i], msmtTmsmt, MSMT_SIZE * MSMT_SIZE);
+        arm_add_f32(P_zz, msmtTmsmt, P_zz, MSMT_SIZE * MSMT_SIZE);
     }
-    
+
     float P_vv[MSMT_SIZE * MSMT_SIZE];
-    add(P_zz, R, P_vv, MSMT_SIZE, MSMT_SIZE, MSMT_SIZE);
+    arm_add_f32(P_zz, R, P_vv, MSMT_SIZE * MSMT_SIZE);
     float P_vv_inv[MSMT_SIZE * MSMT_SIZE];
-    memcpy(P_vv_inv, P_vv, sizeof(float) * MSMT_SIZE * MSMT_SIZE);
-    inv(P_vv_inv, MSMT_SIZE);
+    arm_matrix_instance_f32 P_vv_mat = {MSMT_SIZE, MSMT_SIZE, P_vv};
+    arm_matrix_instance_f32 P_vv_inv_mat = {MSMT_SIZE, MSMT_SIZE, P_vv_inv};
+    arm_mat_inverse_f32(&P_vv_mat, &P_vv_inv_mat);
 
     float k[STATE_SIZE * MSMT_SIZE];
-    mul(P_xz, P_vv_inv, false, k, STATE_SIZE, MSMT_SIZE, MSMT_SIZE);
+    arm_matrix_instance_f32 P_xz_mat = {STATE_SIZE, MSMT_SIZE, P_xz};
+    arm_matrix_instance_f32 k_mat = {STATE_SIZE, MSMT_SIZE, k};
+    arm_mat_mult_f32(&P_xz_mat, &P_vv_inv_mat, &k_mat);
 
     float innovation[MSMT_SIZE];
     for(int i = 0; i<MSMT_SIZE; i++){
         innovation[i] = body[i] - mean_msmt[i];
     }
     float k_innovation[STATE_SIZE];
-    mul(k, innovation, false, k_innovation, STATE_SIZE, MSMT_SIZE, 1);
+    arm_matrix_instance_f32 innovation_mat = {MSMT_SIZE, 1, innovation};
+    arm_matrix_instance_f32 k_innovation_mat = {STATE_SIZE, 1, k_innovation};
+    arm_mat_mult_f32(&k_mat, &innovation_mat, &k_innovation_mat);
 
     float x_hat[STATE_SIZE];
-    add(mean_err, k_innovation, x_hat, STATE_SIZE, 1, 1);
+    arm_add_f32(mean_err, k_innovation, x_hat, STATE_SIZE);
 
     // 1. Calculate K * P_vv
     float K_Pvv[STATE_SIZE * MSMT_SIZE];
-    mul(k, P_vv, false, K_Pvv, STATE_SIZE, MSMT_SIZE, MSMT_SIZE);
+    arm_matrix_instance_f32 K_Pvv_mat = {STATE_SIZE, MSMT_SIZE, K_Pvv};
+    arm_mat_mult_f32(&k_mat, &P_vv_mat, &K_Pvv_mat);
 
     // 2. Transpose K
     float K_T[MSMT_SIZE * STATE_SIZE];
-    memcpy(K_T, k, sizeof(float) * MSMT_SIZE * STATE_SIZE);
-    tranf(K_T, STATE_SIZE, MSMT_SIZE);
+    arm_matrix_instance_f32 K_T_mat = {MSMT_SIZE, STATE_SIZE, K_T};
+    arm_mat_trans_f32(&k_mat, &K_T_mat);
 
     // 3. Calculate (K * P_vv) * K^T
     float K_Pvv_KT[STATE_SIZE * STATE_SIZE];
-    mul(K_Pvv, K_T, false, K_Pvv_KT, STATE_SIZE, MSMT_SIZE, STATE_SIZE);
+    arm_matrix_instance_f32 K_Pvv_KT_mat = {STATE_SIZE, STATE_SIZE, K_Pvv_KT};
+    arm_mat_mult_f32(&K_Pvv_mat, &K_T_mat, &K_Pvv_KT_mat);
 
     // 4. Update Covariance: P = P_hat - K_Pvv_KT
-    scale(K_Pvv_KT, -1.0f, STATE_SIZE, STATE_SIZE); // Make it negative
-    add(P_hat, K_Pvv_KT, P, STATE_SIZE, STATE_SIZE, STATE_SIZE);
-    
-    ensure_psd(P, STATE_SIZE);
+    arm_scale_f32(K_Pvv_KT, -1.0f, K_Pvv_KT, STATE_SIZE * STATE_SIZE); // Make it negative
+    arm_add_f32(P_hat, K_Pvv_KT, P, STATE_SIZE * STATE_SIZE);
+
+    ensure_psd(&P_mat);
 
     float x_hat_rot[4];
     float x_hat_vec[3] = {x_hat[0], x_hat[1], x_hat[2]};

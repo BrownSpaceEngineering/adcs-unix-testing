@@ -2,9 +2,18 @@
 #include "include/laextension.h"
 #include "include/quat.h"
 #include "math.h"
+#include "arm_math.h"
+
 #define EPS 1e-6f
-static void normalize3(float *v)
-{
+
+/**
+ * \fn normalize3
+ * 
+ * \brief Normalizes a 3D vector
+ * 
+ * \param[in,out] v The vector to normalize
+ */
+static void normalize3(float *v) {
     float n = l2_norm(v, 3);
     if (n > EPS) {
         v[0] /= n;
@@ -19,6 +28,16 @@ static float dot3(const float *a, const float *b)
 }
 // --- Main function ---
 
+/**
+ * \fn down_quat
+ * 
+ * \brief Computes the quaternion that rotates the satellite from its current orientation to a "down" orientation where the body Z-axis points towards Earth.
+ * 
+ * \param[in] from Current position vector of the satellite in ECI frame
+ * \param[in] to Target position vector (e.g., Earth's center) in ECI frame
+ * \param[in] q_body_to_eci Current orientation of the satellite as a quaternion (Body → ECI)
+ * \param[out] goal_q Desired orientation quaternion (Body → ECI) that points down
+ */
 void down_quat(float* from, float* to, float* q_body_to_eci, float* goal_q)
 {
     float nadir[3];

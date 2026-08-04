@@ -1,5 +1,6 @@
 #include "include/photodiode_determination.h"
-#include "declareFunctions.h"
+#include "Include/dsp/matrix_functions.h"
+#include "arm_math.h"
 #include "math.h"
 
 const int NUM_PAIRS = 9;
@@ -90,8 +91,8 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
 
     // Construct system of equations
 
-    float A[NUM_SELECTED_DIODES * 3];
-    float b[NUM_SELECTED_DIODES];
+    float32_t A[NUM_SELECTED_DIODES * 3];
+    float32_t b[NUM_SELECTED_DIODES];
 
     for (int i = 0; i < NUM_SELECTED_DIODES; i++) {
         int diode_index = selected_indices[i];
@@ -103,15 +104,28 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
         b[i] = selected_readings[i] / MAX_READING;
     }
 
-    // Least-squares inverse
-    pinv(A, NUM_SELECTED_DIODES, 3);
+    // Least-squares solve via normal equations: x = (A^T A)^-1 A^T b
+    arm_matrix_instance_f32 A_mat = {NUM_SELECTED_DIODES, 3, A};
 
-    // Solving using inverse
-    mul(A, b, false,
-        estimated_sun_vector,
-        3,
-        NUM_SELECTED_DIODES,
-        1);
+    float32_t A_T[3 * NUM_SELECTED_DIODES];
+    arm_matrix_instance_f32 A_T_mat = {3, NUM_SELECTED_DIODES, A_T};
+    arm_mat_trans_f32(&A_mat, &A_T_mat);
+
+    float32_t AtA[3 * 3];
+    arm_matrix_instance_f32 AtA_mat = {3, 3, AtA};
+    arm_mat_mult_f32(&A_T_mat, &A_mat, &AtA_mat);
+
+    float32_t AtA_inv[3 * 3];
+    arm_matrix_instance_f32 AtA_inv_mat = {3, 3, AtA_inv};
+    arm_mat_inverse_f32(&AtA_mat, &AtA_inv_mat);
+
+    float32_t Atb[3];
+    arm_matrix_instance_f32 Atb_mat = {3, 1, Atb};
+    arm_matrix_instance_f32 b_mat = {NUM_SELECTED_DIODES, 1, b};
+    arm_mat_mult_f32(&A_T_mat, &b_mat, &Atb_mat);
+
+    arm_matrix_instance_f32 result_mat = {3, 1, estimated_sun_vector};
+    arm_mat_mult_f32(&AtA_inv_mat, &Atb_mat, &result_mat);
 
     // Normalize output vector
     float mag = sqrtf(

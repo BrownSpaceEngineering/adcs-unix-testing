@@ -13,19 +13,16 @@
  * \param n The number of elements in the input and output arrays.
  * \param sigma The standard deviation of the Gaussian kernel.
  */
-void gaussian_smooth_1d(arm_matrix_instance_f32* src, arm_matrix_instance_f32* dst, int n, float32_t sigma) {
+void gaussian_smooth_1d(float32_t* src, float32_t* dst, int n, float32_t sigma) {
     int radius = (int)(3.0 * sigma + 0.5);
     if (radius > GAUSSIAN_RADIUS) { radius = GAUSSIAN_RADIUS; }
     int ksize = 2 * radius + 1;
     float32_t kernel[2 * GAUSSIAN_RADIUS + 1];
     float32_t sum = 0.0;
 
-    float32_t *src_data = src->pData;
-    float32_t *dst_data = dst->pData;
+    float32_t x;
 
-    float32_t x; 
-
-    // generate the gaussian kernel 
+    // generate the gaussian kernel
     for (int i = 0; i < ksize; i++) {
         x = i - radius;
         kernel[i] = expf(-0.5 * (x / sigma) * (x / sigma));
@@ -44,9 +41,9 @@ void gaussian_smooth_1d(arm_matrix_instance_f32* src, arm_matrix_instance_f32* d
             int j = i + t - radius;
             if (j < 0)  j = -j;             // reflect left
             if (j >= n) j = 2*n - 2 - j;    // reflect right
-            val += src_data[j] * kernel[t];
+            val += src[j] * kernel[t];
         }
-        dst_data[i] = val;
+        dst[i] = val;
     }
 }
 

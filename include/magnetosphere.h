@@ -7,6 +7,7 @@
 #endif
 
 #include <stdint.h>
+#include "arm_math.h"
 
 /* Targeted double promotion — float interface, double JD arithmetic */
 float jd2year(float64_t JD);

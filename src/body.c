@@ -17,7 +17,8 @@
 #include "include/ecef2eci.h"
 #include "include/down_quat.h"
 #include "include/torque2moments.h"
-#include "declareFunctions.h"
+#include "Include/dsp/basic_math_functions.h"
+#include "arm_math.h"
 
 extern float PVD_ECEF[3] = {6.3761e6, -0.1387e6, 0.0807e6};
 extern const float DETUMBLING_GYRO_THRESHOLD = 0.17f;
@@ -53,7 +54,7 @@ bool filter_failure(float* new_quat, float* gyro, float* new_P, float dt){
     quat_diff(estimated_quat, new_quat, diff);
     float diff_rot[3];
     quat2rotationvec(diff, diff_rot);
-    scale(diff_rot, 1 / dt, 1, 3);
+    arm_scale_f32(diff_rot, 1 / dt, diff_rot, 3);
     if(l2_norm(diff_rot, 3) / l2_norm(gyro, 3) > 10){
         return true;
     }
@@ -73,7 +74,7 @@ bool ready_to_point(float* photodiode_measurements, float* gyro, float* last_mag
     float dM[3] = {magnetometer_measurements[0] - last_magnetometer_measurements[0],
                 magnetometer_measurements[1] - last_magnetometer_measurements[2],
                 magnetometer_measurements[1] - last_magnetometer_measurements[2]};
-    scale(dM, dt, 1, 3);
+    arm_scale_f32(dM, dt, dM, 3);
     float photodiode_sun_vec[3];
     bool in_sun = get_vec_from_photodiode_readings(photodiode_measurements, photodiode_sun_vec);
     
@@ -218,19 +219,19 @@ void body(float* last_magnetometer_measurements, //1x3
         else if(last_ref_magnetosphere_initialized){
             //Simulates a reading using the last magnetosphere initialization measurement
             float finite_difference_reference[3];
-            sub(expected_mag, last_ref_magnetosphere, finite_difference_reference, 1, 3, 3);
-            scale(finite_difference_reference, dt, 1, 3);
+            arm_sub_f32(expected_mag, last_ref_magnetosphere, finite_difference_reference, 3);
+            arm_scale_f32(finite_difference_reference, dt, finite_difference_reference, 3);
 
             float finite_difference_body[3];
-            sub(magnetometer_measurements, last_magnetometer_measurements, finite_difference_body, 1, 3, 3);
-            scale(finite_difference_body, dt, 1, 3);
+            arm_sub_f32(magnetometer_measurements, last_magnetometer_measurements, finite_difference_body, 3);
+            arm_scale_f32(finite_difference_body, dt, finite_difference_body, 3);
 
             float cross_mag_body[3];
             float unbiased_gyro[3];
-            sub(gyro_measurements, estimated_gyro_bias, unbiased_gyro, 1, 3, 3);
+            arm_sub_f32(gyro_measurements, estimated_gyro_bias, unbiased_gyro, 3);
             cross(unbiased_gyro, magnetometer_measurements, cross_mag_body);
             float finite_difference_body_updated[3];
-            add(finite_difference_body, cross_mag_body, finite_difference_body_updated, 1, 3, 3);
+            arm_add_f32(finite_difference_body, cross_mag_body, finite_difference_body_updated, 3);
 
             //Assembles ref & body measurements
             float body[6] = {magnetometer_measurements[0], magnetometer_measurements[1], magnetometer_measurements[2], finite_difference_body_updated[0], finite_difference_body_updated[1], finite_difference_body_updated[2]};

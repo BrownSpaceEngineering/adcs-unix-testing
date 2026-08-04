@@ -98,22 +98,39 @@ float32_t trace(arm_matrix_instance_f32* A){
 
 /**
  * \fn l2_norm
- * 
+ *
  * \brief Compute the L2 norm of a vector
- * 
+ *
  * \param[in] A: Vector
  * \param[in] n: Number of elements in the vector
- * 
+ *
  * \return float, L2 norm of the vector
  */
 inline float32_t l2_norm(float32_t *A, int n){
-    
+
     float32_t sum_squares;
     float32_t norm;
 
     arm_power_f32(A, n, &sum_squares);
-   
+
     arm_sqrt_f32(sum_squares, &norm);
-    
+
     return norm;
+}
+
+/**
+ * \fn eye
+ *
+ * \brief Fills a square matrix with the identity matrix
+ *
+ * \param[out] A: Square matrix to fill, n x n
+ * \param[in] n: Size of the matrix
+ */
+void eye(float32_t *A, int n){
+    for (int i = 0; i < n * n; i++) {
+        A[i] = 0.0f;
+    }
+    for (int i = 0; i < n; i++) {
+        A[i * n + i] = 1.0f;
+    }
 }
