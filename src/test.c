@@ -1,27 +1,29 @@
 #include "include/test.h"
-#include "include/quat.h"
-#include "include/iterate.h"
-#include "include/quest.h"
-#include "include/laextension.h"
-#include "Include/dsp/matrix_functions.h"
 #include "Include/dsp/basic_math_functions.h"
+#include "Include/dsp/matrix_functions.h"
 #include "arm_math.h"
+#include "include/iterate.h"
+#include "include/laextension.h"
+#include "include/quat.h"
+#include "include/quest.h"
 #include "stdlib.h"
+#include <float.h>
+#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
-#include <float.h>
-#include <stdbool.h>
 
-static float uniform_01(void) {
-    return ((float) rand() + 1.0f) / ((float) RAND_MAX + 2.0f);
-}
+#ifndef M_PI
+#define M_PI PI
+#endif
+
+static float uniform_01(void) { return ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f); }
 
 static float normal_sample(float mean, float stddev) {
     float u1 = uniform_01();
     float u2 = uniform_01();
     float mag = sqrtf(-2.0f * logf(u1));
-    float z0 = mag * cosf(2.0f * (float) M_PI * u2);
+    float z0 = mag * cosf(2.0f * (float)M_PI * u2);
     return mean + stddev * z0;
 }
 
@@ -46,18 +48,18 @@ static bool eps_close_matrix(float32_t* A, float32_t* B, int rows, int cols, flo
 // put test function definitions here
 
 void test_run_all(void) {
-    //test_quest();
+    // test_quest();
     test_iteration_1vec();
-    //test_iteration_2vec();
+    // test_iteration_2vec();
 }
 
-void test_quest(void){
+void test_quest(void) {
     float true_ref_to_body[4] = {0.78355, 0.44793, 0.32448, 0.28304};
     float true_body_to_ref[4];
     quat_inv(true_ref_to_body, true_body_to_ref);
     float ref_1[3] = {1, 2, 3};
-    float ref_2[3] = {-4,3, -6};
-    float ref[6] = {1,2,3,-4,3,-6};
+    float ref_2[3] = {-4, 3, -6};
+    float ref[6] = {1, 2, 3, -4, 3, -6};
 
     float body_1[3];
     quat_apply(true_ref_to_body, ref_1, body_1);
@@ -77,7 +79,6 @@ void test_quest(void){
         print_matrix(guess, 1, 4);
         print_matrix(true_body_to_ref, 1, 4);
     }
-
 }
 void test_matrix_product(void) {
 
@@ -260,7 +261,7 @@ void test_quaternion(void) {
     }
 }
 
-void test_iteration_2vec(void){
+void test_iteration_2vec(void) {
     float dt = 0.5;
     float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
     quat_norm(true_body_to_ref, true_body_to_ref);
@@ -273,12 +274,12 @@ void test_iteration_2vec(void){
 
     float true_omega[3] = {2, 0.5, -1};
     float true_bias[3] = {0.001f, 0.001f, 0.001f};
-    arm_scale_f32(true_omega, M_PI/180.0f, true_omega, 3);
+    arm_scale_f32(true_omega, M_PI / 180.0f, true_omega, 3);
 
     float gyro_noise = 0.001;
     float msmt_noise = 0.03;
 
-    float state[6] = {0,0,0,0,0,0};
+    float state[6] = {0, 0, 0, 0, 0, 0};
     float cov[36];
     float Q[36];
     float R[36];
@@ -290,14 +291,15 @@ void test_iteration_2vec(void){
     arm_scale_f32(Q, 0.01, Q, 36);
 
     float ref[6] = {40, 0, 0, 0, 40, 0};
-    float ref_1[3] = {40,0,0};
-    float ref_2[3] = {0,40,0};
+    float ref_1[3] = {40, 0, 0};
+    float ref_2[3] = {0, 40, 0};
 
-    for(int iter = 0; iter < 1000; iter++){
+    for (int iter = 0; iter < 1000; iter++) {
         float simulated_gyro_measurement[3];
-        for(int i = 0; i<3; i++){
-            float uniform_noise = (2.0f * ((float) rand() / (float) RAND_MAX)) - 1.0f;
-            simulated_gyro_measurement[i] = true_omega[i] + true_bias[i] + uniform_noise * gyro_noise;
+        for (int i = 0; i < 3; i++) {
+            float uniform_noise = (2.0f * ((float)rand() / (float)RAND_MAX)) - 1.0f;
+            simulated_gyro_measurement[i]
+                = true_omega[i] + true_bias[i] + uniform_noise * gyro_noise;
         }
 
         float delta_vec[3];
@@ -313,21 +315,21 @@ void test_iteration_2vec(void){
         float new_ref_to_body[4];
         quat_inv(true_body_to_ref, new_ref_to_body);
 
-
         float body_1[3];
         float body_2[3];
         quat_apply(new_ref_to_body, ref_1, body_1);
         quat_apply(new_ref_to_body, ref_2, body_2);
         float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
-        for(int i = 0; i<6; i++){
-            float uniform_noise = (2.0f * ((float) rand() / (float) RAND_MAX)) - 1.0f;
+        for (int i = 0; i < 6; i++) {
+            float uniform_noise = (2.0f * ((float)rand() / (float)RAND_MAX)) - 1.0f;
             body[i] = body[i] + uniform_noise * msmt_noise;
         }
 
         float new_error_state[6];
         float new_quat[4];
         float new_P[36];
-        iterate(state, current_guess, cov, body, ref, simulated_gyro_measurement, Q, R, dt, new_error_state, new_quat, new_P);
+        iterate(state, current_guess, cov, body, ref, simulated_gyro_measurement, Q, R, dt,
+                new_error_state, new_quat, new_P);
 
         new_error_state[0] = 0;
         new_error_state[1] = 0;
@@ -337,22 +339,24 @@ void test_iteration_2vec(void){
         memcpy(cov, new_P, sizeof(float) * 36);
         memcpy(current_guess, new_quat, sizeof(float) * 4);
         quat_norm(current_guess, current_guess);
-        if(iter % 50 == 0){
+        if (iter % 50 == 0) {
             float current_q_err[4];
             quat_diff(true_body_to_ref, current_guess, current_q_err);
             float current_err[3];
             quat2rotationvec(current_q_err, current_err);
-            printf("Estimate Error: %f\n", (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
+            printf("Estimate Error: %f\n",
+                   (sqrtf(current_err[0] * current_err[0] + current_err[1] * current_err[1]
+                          + current_err[2] * current_err[2])));
             printf("Estimated Bias: ");
             float bias[3] = {state[3], state[4], state[5]};
-            arm_scale_f32(bias, 180.0f/M_PI, bias, 3);
+            arm_scale_f32(bias, 180.0f / M_PI, bias, 3);
             print_matrix(bias, 1, 3);
             printf("\n");
         }
     }
 }
 
-void test_iteration_1vec(void){
+void test_iteration_1vec(void) {
     float dt = 0.5;
     float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
     float true_ref_to_body[4];
@@ -367,12 +371,12 @@ void test_iteration_1vec(void){
 
     float true_omega[3] = {2, 0.5, -0.5};
     float true_bias[3] = {0.001f, 0.001f, 0.001f};
-    arm_scale_f32(true_omega, M_PI/180.0f, true_omega, 3);
+    arm_scale_f32(true_omega, M_PI / 180.0f, true_omega, 3);
 
     float gyro_noise = 0.001;
     float msmt_noise = 0.03;
 
-    float state[6] = {0,0,0,0,0,0};
+    float state[6] = {0, 0, 0, 0, 0, 0};
     float cov[36];
     float Q[36];
     float R[36];
@@ -393,9 +397,9 @@ void test_iteration_1vec(void){
     float last_body[3];
     quat_apply(true_ref_to_body, last_ref, last_body);
 
-    for(int iter = 0; iter < 1000; iter++){
+    for (int iter = 0; iter < 1000; iter++) {
         float simulated_gyro_measurement[3];
-        for(int i = 0; i<3; i++){
+        for (int i = 0; i < 3; i++) {
             simulated_gyro_measurement[i] = true_omega[i] + normal_sample(true_bias[i], gyro_noise);
         }
 
@@ -413,18 +417,18 @@ void test_iteration_1vec(void){
         quat_inv(true_body_to_ref, new_ref_to_body);
 
         float d_ref[3];
-        for(int i = 0; i<3; i++){
+        for (int i = 0; i < 3; i++) {
             d_ref[i] = (ref[i] - last_ref[i]) / dt;
         }
         float body[3];
         quat_apply(new_ref_to_body, ref, body);
-        for(int i = 0; i<3; i++){
+        for (int i = 0; i < 3; i++) {
             body[i] = body[i] + normal_sample(0.0f, msmt_noise);
         }
         float d_body[3];
         float c_prod[3];
         cross(simulated_gyro_measurement, body, c_prod);
-        for(int i = 0; i<3; i++){
+        for (int i = 0; i < 3; i++) {
             d_body[i] = (body[i] - last_body[i]) / dt + c_prod[i];
         }
         float ref_norm = l2_norm(ref, 3);
@@ -435,7 +439,8 @@ void test_iteration_1vec(void){
         float new_error_state[6];
         float new_quat[4];
         float new_P[36];
-        iterate(state, current_guess, cov, body_full, reference, simulated_gyro_measurement, Q, R, dt, new_error_state, new_quat, new_P);
+        iterate(state, current_guess, cov, body_full, reference, simulated_gyro_measurement, Q, R,
+                dt, new_error_state, new_quat, new_P);
 
         new_error_state[0] = 0;
         new_error_state[1] = 0;
@@ -448,25 +453,27 @@ void test_iteration_1vec(void){
         memcpy(cov, new_P, sizeof(float) * 36);
         memcpy(current_guess, new_quat, sizeof(float) * 4);
         quat_norm(current_guess, current_guess);
-        if(iter % 50 == 0){
+        if (iter % 50 == 0) {
             float current_q_err[4];
             quat_diff(true_body_to_ref, current_guess, current_q_err);
             float current_err[3];
             quat2rotationvec(current_q_err, current_err);
-            printf("Msmt Error: %f\n", (180.0f / M_PI) * (sqrtf(current_err[0]*current_err[0] + current_err[1] * current_err[1] + current_err[2] * current_err[2])));
+            printf("Msmt Error: %f\n",
+                   (180.0f / M_PI)
+                       * (sqrtf(current_err[0] * current_err[0] + current_err[1] * current_err[1]
+                                + current_err[2] * current_err[2])));
             printf("Estimated Bias: ");
             float bias[3] = {state[3], state[4], state[5]};
-            arm_scale_f32(bias, 180.0f/M_PI, bias, 3);
+            arm_scale_f32(bias, 180.0f / M_PI, bias, 3);
             print_matrix(bias, 1, 3);
             printf("\n");
         }
         memcpy(last_body, body, sizeof(float) * 3);
         memcpy(last_ref, ref, sizeof(float) * 3);
 
-        //THE IMPORTANT PART: REF NEEDS TO CHANGE A DECENT AMT
-        for(int i = 0; i<3; i++){
+        // THE IMPORTANT PART: REF NEEDS TO CHANGE A DECENT AMT
+        for (int i = 0; i < 3; i++) {
             ref[i] = ref[i] + normal_sample(0.0f, 0.1f);
         }
     }
-
 }
