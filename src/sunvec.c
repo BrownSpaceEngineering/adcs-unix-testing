@@ -3,7 +3,7 @@
 #include <string.h>
 
 #ifndef M_PI
-#define M_PI PI
+#define M_PI 3.141592653589
 #endif
 
 float sind(float in) { return sin(in * M_PI / 180.0); }
