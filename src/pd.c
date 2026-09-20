@@ -1,33 +1,84 @@
 #include "include/pd.h"
-#include "Include/arm_math_types.h"
-#include "Include/dsp/basic_math_functions.h"
 #include "arm_math.h"
+#include <math.h>
+
+#define PD_EPS 1e-12f
+
 /**
  * \fn pd_loop
- * 
- * \brief A simple PD control loop for attitude control.
- * 
- * From the error (r_e) in axis-angle form, the angular velocity (r_omega) in axis-angle form, returns the torque wanted 
- * 
- * \param[in] r_e The attitude error in axis-angle form (r_e[0], r_e[1], r_e[2]) is the rotation vector, and r_e[3] is the angle of rotation in radians. 
- * \param[in] r_omega The angular velocity error in axis-angle form (r_omega[0], r_omega[1], r_omega[2]) is the angular velocity vector, and r_omega[3] is the magnitude of the angular velocity in radians per second.
- * \param[out] tau The output torque vector to apply to the satellite in order to correct the attitude error and angular velocity error.
+ *
+ * \brief PD control loop for attitude control.
+ *
+ * \param[in]  omega    Angular velocity w_eci2b in body coordinates, deg/s (3 elements).
+ * \param[in]  q_error  Error quaternion from pointing_error, scalar first, WXYZ (4 elements).
+ *                       May be negated in place to pick the shortest-path rotation.
+ * \param[out] tau      Output torque in N-m, body coordinates (3 elements).
  */
-void pd_loop(float32_t *r_e, float32_t *r_omega, float32_t *tau) {
+void pd_loop(float32_t *omega, float32_t *q_error, float32_t *tau) {
+    // Pick the shortest possible rotation
+    if (q_error[0] < 0.0f) {
+        arm_negate_f32(q_error, q_error, 4);
+    }
 
-    float32_t placeholder = 1.0;
-    float32_t placeholder_kp = placeholder * r_e[3]; 
-    float32_t placeholder_kd = placeholder * r_omega[3]; 
-    //TODO: find these constants
-    float32_t Kp[3] = {-placeholder_kp, -placeholder_kp, -placeholder_kp};
-    float32_t Kd[3] = {-placeholder_kd, -placeholder_kd, -placeholder_kd};
+    float32_t angle = 2.0f * acosf(q_error[0]);
 
-    float32_t p[3]; 
-    float32_t d[3];
+    // Convert error quaternion to axis-angle: r_e = [axis(3); angle]
+    float32_t r_e[4];
+    if (angle > PD_EPS) {
+        float32_t half_sin = arm_sin_f32(angle / 2.0f);
+        arm_scale_f32(&q_error[1], 1.0f / half_sin, r_e, 3);
+    } else {
+        r_e[0] = 0.0f;
+        r_e[1] = 0.0f;
+        r_e[2] = 0.0f;
+    }
+    r_e[3] = angle;
 
-    arm_mult_f32(Kp, r_e, p, 3); 
-    arm_mult_f32(Kd, r_omega, d, 3);
+    // Convert omega (deg/s) to axis-angle form: r_omega = [axis(3); magnitude]
+    float32_t omega_rad[3];
+    arm_scale_f32(omega, PI / 180.0f, omega_rad, 3);
 
-    arm_add_f32(p, d, tau, 3);
+    float32_t omega_mag_sq;
+    arm_power_f32(omega_rad, 3, &omega_mag_sq);
+    float32_t omega_mag;
+    arm_sqrt_f32(omega_mag_sq, &omega_mag);
 
+    float32_t r_omega[4];
+    if (omega_mag > PD_EPS) {
+        arm_scale_f32(omega_rad, 1.0f / omega_mag, r_omega, 3);
+    } else {
+        r_omega[0] = 0.0f;
+        r_omega[1] = 0.0f;
+        r_omega[2] = 0.0f;
+    }
+    r_omega[3] = omega_mag;
+
+    // PD controller gains
+    const float32_t Kp0 = 0.034f;
+    const float32_t Kd0 = 0.42f;
+    const float32_t max_tau = 5.0f;
+    const float32_t min_tau = -5.0f; //THIS NEEDS TUNING
+
+    //THIS ALSO NEEDS TUNING
+    float32_t I_body_data[9] = {
+        3.0054115e-02f, -5.1674000e-05f,  2.5075000e-05f,
+       -5.1674000e-05f,  1.1430611e-02f, -3.6481690e-03f,
+        2.5075000e-05f, -3.6481690e-03f,  2.3052295e-02f
+    };
+    arm_matrix_instance_f32 I_body;
+    arm_mat_init_f32(&I_body, 3, 3, I_body_data);
+
+    float32_t tau_raw[3];
+    for (int i = 0; i < 3; i++) {
+        float32_t Pi = Kp0 * r_e[3] * r_e[i];
+        float32_t Di = Kd0 * r_omega[3] * r_omega[i];
+        tau_raw[i] = Pi - Di;
+    }
+
+    arm_mat_vec_mult_f32(&I_body, tau_raw, tau);
+
+    for (int i = 0; i < 3; i++) {
+        if (tau[i] > max_tau) tau[i] = max_tau;
+        if (tau[i] < min_tau) tau[i] = min_tau;
+    }
 }

@@ -120,7 +120,7 @@ void body(float* last_magnetometer_measurements, //1x3
             //Gets expected magnetometer reading
             float expected_mag[3];
             float eci[3];
-            orbitalToECI(kepler_posn, eci);
+            orbital_to_eci(kepler_posn, eci);
             wmm_eci_embedded_v2(eci, jd_scalar, jd_frac, expected_mag);
             
             //Gets expected sun vector reading
@@ -164,7 +164,7 @@ void body(float* last_magnetometer_measurements, //1x3
         //Gets expected magnetometer reading
         float expected_mag[3];
         float eci[3];
-        orbitalToECI(kepler_posn, eci);
+        orbital_to_eci(kepler_posn, eci);
         wmm_eci_embedded_v2(eci, jd_scalar, jd_frac, expected_mag);
 
         //Filter during the sun
@@ -293,7 +293,7 @@ void body(float* last_magnetometer_measurements, //1x3
 
         //Use PD to find torques
         float t[3];
-        PD_loop(rotvec, gyro_measurements, t);
+        pd_loop(rotvec, gyro_measurements, t);
 
         //Use torques to find moments
         float m[3];
