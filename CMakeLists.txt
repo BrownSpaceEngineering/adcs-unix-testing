@@ -37,5 +37,7 @@ target_include_directories(${EXECUTABLE} PRIVATE linalg
 
 target_link_libraries(adcs-test m)
 
+target_compile_definitions(${EXECUTABLE} PRIVATE __GNUC_PYTHON__)
+
 # expose headers in an include directory if desired:
 # target_include_directories(${EXECUTABLE} PUBLIC include)
