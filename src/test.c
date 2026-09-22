@@ -6,24 +6,43 @@
 #include "include/laextension.h"
 #include "include/quat.h"
 #include "include/quest.h"
-#include "stdlib.h"
 #include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef M_PI
 #define M_PI PI
 #endif
 
-static float uniform_01(void) { return ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f); }
+/*
+ * Draw a value strictly inside (0, 1):
+ *
+ *   u = (rand() + 1) / (RAND_MAX + 2)
+ */
+static float32_t uniform_01(void) {
+    /* u = (rand() + 1) / (RAND_MAX + 2). */
+    return ((float32_t)rand() + 1.0f) / ((float32_t)RAND_MAX + 2.0f);
+}
 
-static float normal_sample(float mean, float stddev) {
-    float u1 = uniform_01();
-    float u2 = uniform_01();
-    float mag = sqrtf(-2.0f * logf(u1));
-    float z0 = mag * cosf(2.0f * (float)M_PI * u2);
+/*
+ * Draw one normal sample with the Box-Muller transform:
+ *
+ *   u1, u2 ~ Uniform(0, 1)
+ *   z0     = sqrt(-2 log(u1)) cos(2 pi u2)
+ *   sample = mean + stddev z0
+ */
+static float32_t normal_sample(float32_t mean, float32_t stddev) {
+    float32_t u1 = uniform_01();
+    float32_t u2 = uniform_01();
+
+    /* z0 = sqrt(-2 log(u1)) cos(2 pi u2). */
+    float32_t mag = sqrtf(-2.0f * logf(u1));
+    float32_t z0 = mag * cosf(2.0f * (float32_t)M_PI * u2);
+
+    /* sample = mean + stddev z0. */
     return mean + stddev * z0;
 }
 
@@ -48,9 +67,8 @@ static bool eps_close_matrix(float32_t* A, float32_t* B, int rows, int cols, flo
 // put test function definitions here
 
 void test_run_all(void) {
-    // test_quest();
-    test_iteration_1vec();
-    // test_iteration_2vec();
+    test_quest();
+    test_iteration();
 }
 
 void test_quest(void) {
@@ -261,219 +279,364 @@ void test_quaternion(void) {
     }
 }
 
-void test_iteration_2vec(void) {
-    float dt = 0.5;
-    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
-    quat_norm(true_body_to_ref, true_body_to_ref);
 
-    float current_guess[4];
-    for (int i = 0; i < 4; i++) {
-        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
-    }
-    quat_norm(current_guess, current_guess);
+#define UKF_CHECK(condition) do { \
+    if (!(condition)) { \
+        fprintf(stderr, "%s:%d: %s failed\n", __func__, __LINE__, #condition); \
+        exit(EXIT_FAILURE); \
+    } \
+} while (0)
 
-    float true_omega[3] = {2, 0.5, -1};
-    float true_bias[3] = {0.001f, 0.001f, 0.001f};
-    arm_scale_f32(true_omega, M_PI / 180.0f, true_omega, 3);
-
-    float gyro_noise = 0.001;
-    float msmt_noise = 0.03;
-
-    float state[6] = {0, 0, 0, 0, 0, 0};
-    float cov[36];
-    float Q[36];
-    float R[36];
-    eye(cov, 6);
-    arm_scale_f32(cov, 0.1, cov, 36);
-    eye(R, 6);
-    arm_scale_f32(R, 0.1, R, 36);
-    eye(Q, 6);
-    arm_scale_f32(Q, 0.01, Q, 36);
-
-    float ref[6] = {40, 0, 0, 0, 40, 0};
-    float ref_1[3] = {40, 0, 0};
-    float ref_2[3] = {0, 40, 0};
-
-    for (int iter = 0; iter < 1000; iter++) {
-        float simulated_gyro_measurement[3];
-        for (int i = 0; i < 3; i++) {
-            float uniform_noise = (2.0f * ((float)rand() / (float)RAND_MAX)) - 1.0f;
-            simulated_gyro_measurement[i]
-                = true_omega[i] + true_bias[i] + uniform_noise * gyro_noise;
-        }
-
-        float delta_vec[3];
-        memcpy(delta_vec, true_omega, sizeof(float) * 3);
-        arm_scale_f32(delta_vec, dt, delta_vec, 3);
-
-        float delta_q[4];
-        rotationvec2quat(delta_vec, delta_q);
-
-        float new_true_body_to_ref[4];
-        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
-        quat_norm(new_true_body_to_ref, true_body_to_ref);
-        float new_ref_to_body[4];
-        quat_inv(true_body_to_ref, new_ref_to_body);
-
-        float body_1[3];
-        float body_2[3];
-        quat_apply(new_ref_to_body, ref_1, body_1);
-        quat_apply(new_ref_to_body, ref_2, body_2);
-        float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
-        for (int i = 0; i < 6; i++) {
-            float uniform_noise = (2.0f * ((float)rand() / (float)RAND_MAX)) - 1.0f;
-            body[i] = body[i] + uniform_noise * msmt_noise;
-        }
-
-        float new_error_state[6];
-        float new_quat[4];
-        float new_P[36];
-        iterate(state, current_guess, cov, body, ref, simulated_gyro_measurement, Q, R, dt,
-                new_error_state, new_quat, new_P);
-
-        new_error_state[0] = 0;
-        new_error_state[1] = 0;
-        new_error_state[2] = 0;
-
-        memcpy(state, new_error_state, sizeof(float) * 6);
-        memcpy(cov, new_P, sizeof(float) * 36);
-        memcpy(current_guess, new_quat, sizeof(float) * 4);
-        quat_norm(current_guess, current_guess);
-        if (iter % 50 == 0) {
-            float current_q_err[4];
-            quat_diff(true_body_to_ref, current_guess, current_q_err);
-            float current_err[3];
-            quat2rotationvec(current_q_err, current_err);
-            printf("Estimate Error: %f\n",
-                   (sqrtf(current_err[0] * current_err[0] + current_err[1] * current_err[1]
-                          + current_err[2] * current_err[2])));
-            printf("Estimated Bias: ");
-            float bias[3] = {state[3], state[4], state[5]};
-            arm_scale_f32(bias, 180.0f / M_PI, bias, 3);
-            print_matrix(bias, 1, 3);
-            printf("\n");
-        }
+/*
+ * Initialize the simulation covariances:
+ *
+ *   P0 = diag([0.01, 0.01, 0.01, 2.5e-5, 2.5e-5, 2.5e-5])
+ *   Q  = diag([4e-6, 4e-6, 4e-6, 1e-10, 1e-10, 1e-10])
+ *   R1 = 2e-5 I3
+ *   R2 = diag([2e-5, 2e-5, 2e-5, 1e-4, 1e-4, 1e-4])
+ */
+static void initialize_filter_matrices(float32_t *covariance, float32_t *process_noise,
+                                       float32_t *two_vector_noise,
+                                       float32_t *one_vector_noise) {
+    memset(covariance, 0, 36 * sizeof(float32_t));
+    memset(process_noise, 0, 36 * sizeof(float32_t));
+    memset(two_vector_noise, 0, 36 * sizeof(float32_t));
+    memset(one_vector_noise, 0, 9 * sizeof(float32_t));
+    /*
+     * P0 = diag([0.01, 0.01, 0.01, 2.5e-5, 2.5e-5, 2.5e-5])
+     * Q  = diag([4e-6, 4e-6, 4e-6, 1e-10, 1e-10, 1e-10])
+     * R1 = 2e-5 I3
+     * R2 = diag([2e-5, 2e-5, 2e-5, 1e-4, 1e-4, 1e-4])
+     */
+    for (int i = 0; i < 3; ++i) {
+        covariance[i * 6 + i] = 0.01f;
+        covariance[(i + 3) * 6 + i + 3] = 2.5e-5f;
+        process_noise[i * 6 + i] = 4e-6f;
+        process_noise[(i + 3) * 6 + i + 3] = 1e-10f;
+        two_vector_noise[i * 6 + i] = one_vector_noise[i * 3 + i] = 2e-5f;
+        two_vector_noise[(i + 3) * 6 + i + 3] = 1e-4f;
     }
 }
 
-void test_iteration_1vec(void) {
-    float dt = 0.5;
-    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
-    float true_ref_to_body[4];
-    quat_norm(true_body_to_ref, true_body_to_ref);
-    quat_inv(true_body_to_ref, true_ref_to_body);
+/*
+ * Normalize a three-dimensional vector:
+ *
+ *   output = input / ||input||_2
+ */
+static void unit_vector3(const float32_t *input, float32_t *output) {
+    /* output = input / ||input||_2. */
+    float32_t length = sqrtf(input[0] * input[0] + input[1] * input[1]
+                         + input[2] * input[2]);
+    UKF_CHECK(isfinite(length) && length > 0.0f);
+    for (int i = 0; i < 3; ++i) output[i] = input[i] / length;
+}
 
-    float current_guess[4];
-    for (int i = 0; i < 4; i++) {
-        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
+/*
+ * Simulate noisy unit-vector observations in body coordinates:
+ *
+ *   q_reference_to_body = q_body_to_reference^-1
+ *   body_mag = unit(q^-1 (*) magnetic_field (*) q + N(0, 0.01^2 I))
+ *   body_sun = unit(q^-1 (*) sun_field      (*) q + N(0, 0.01^2 I))
+ *
+ * The sun equation is evaluated only in two-vector mode.
+ */
+static void simulate_body_vectors(const float32_t *truth_quaternion,
+                                  const float32_t *magnetic_field,
+                                  const float32_t *sun_field,
+                                  bool two_vectors,
+                                  float32_t *body_vectors) {
+    float32_t reference_to_body_quaternion[4], noisy_vector[3];
+
+    /* q_reference_to_body = q_body_to_reference^-1. */
+    quat_inv(truth_quaternion, reference_to_body_quaternion);
+
+    /* body_mag = unit(q^-1 (*) magnetic_field (*) q + N(0, 0.01^2 I)). */
+    quat_apply(reference_to_body_quaternion, magnetic_field, noisy_vector);
+    for (int axis = 0; axis < 3; ++axis) {
+        noisy_vector[axis] += normal_sample(0.0f, 0.01f);
     }
-    quat_norm(current_guess, current_guess);
+    unit_vector3(noisy_vector, body_vectors);
 
-    float true_omega[3] = {2, 0.5, -0.5};
-    float true_bias[3] = {0.001f, 0.001f, 0.001f};
-    arm_scale_f32(true_omega, M_PI / 180.0f, true_omega, 3);
-
-    float gyro_noise = 0.001;
-    float msmt_noise = 0.03;
-
-    float state[6] = {0, 0, 0, 0, 0, 0};
-    float cov[36];
-    float Q[36];
-    float R[36];
-    eye(cov, 6);
-    arm_scale_f32(cov, 0.1, cov, 36);
-    memset(R, 0, sizeof(float) * 36);
-    R[0] = 0.03f;
-    R[7] = 0.03f;
-    R[14] = 0.03f;
-    R[21] = 1.0f;
-    R[28] = 1.0f;
-    R[35] = 1.0f;
-    eye(Q, 6);
-    arm_scale_f32(Q, 0.01, Q, 36);
-
-    float ref[3] = {40, -40, 30};
-    float last_ref[3] = {40, -40, 30};
-    float last_body[3];
-    quat_apply(true_ref_to_body, last_ref, last_body);
-
-    for (int iter = 0; iter < 1000; iter++) {
-        float simulated_gyro_measurement[3];
-        for (int i = 0; i < 3; i++) {
-            simulated_gyro_measurement[i] = true_omega[i] + normal_sample(true_bias[i], gyro_noise);
+    if (two_vectors) {
+        /* body_sun = unit(q^-1 (*) sun_field (*) q + N(0, 0.01^2 I)). */
+        quat_apply(reference_to_body_quaternion, sun_field, noisy_vector);
+        for (int axis = 0; axis < 3; ++axis) {
+            noisy_vector[axis] += normal_sample(0.0f, 0.01f);
         }
+        unit_vector3(noisy_vector, body_vectors + 3);
+    }
+}
 
-        float delta_vec[3];
-        memcpy(delta_vec, true_omega, sizeof(float) * 3);
-        arm_scale_f32(delta_vec, dt, delta_vec, 3);
+/*
+ * Return the shortest angular distance between two attitudes:
+ *
+ *   difference = normalize(left (*) right^-1)
+ *   angle      = 2 atan2(||difference.xyz||_2, |difference.w|)
+ */
+static float32_t quaternion_angle(const float32_t *left, const float32_t *right) {
+    float32_t inverse[4], difference[4];
 
-        float delta_q[4];
-        rotationvec2quat(delta_vec, delta_q);
+    /* difference = left (*) right^-1. */
+    quat_inv(right, inverse);
+    quat_multiply(left, inverse, difference);
+    quat_norm(difference, difference);
+    /* angle = 2 atan2(||difference.xyz||_2, |difference.w|). */
+    float32_t vector_norm = sqrtf(difference[1] * difference[1]
+                              + difference[2] * difference[2]
+                              + difference[3] * difference[3]);
+    return 2.0f * atan2f(vector_norm, fabsf(difference[0]));
+}
 
-        float new_true_body_to_ref[4];
-        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
-        quat_norm(new_true_body_to_ref, true_body_to_ref);
-        float new_ref_to_body[4];
-        quat_inv(true_body_to_ref, new_ref_to_body);
+/*
+ * Return the angle between two three-dimensional vectors:
+ *
+ *   angle = atan2(||left cross right||_2, left dot right)
+ */
+static float32_t vector_angle(const float32_t *left, const float32_t *right) {
+    /* angle = atan2(||left cross right||_2, left dot right). */
+    float32_t dot = left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+    float32_t cross[3] = {left[1] * right[2] - left[2] * right[1],
+                          left[2] * right[0] - left[0] * right[2],
+                          left[0] * right[1] - left[1] * right[0]};
+    float32_t cross_norm = sqrtf(cross[0] * cross[0] + cross[1] * cross[1]
+                                 + cross[2] * cross[2]);
+    return atan2f(cross_norm, dot);
+}
 
-        float d_ref[3];
-        for (int i = 0; i < 3; i++) {
-            d_ref[i] = (ref[i] - last_ref[i]) / dt;
+/*
+ * Return the largest one-sigma value in a three-axis covariance block:
+ *
+ *   result = sqrt(max(diag(cov)[first_axis:first_axis+3]))
+ */
+static float32_t max_axis_sigma(const float32_t *cov, int first_axis) {
+    /* max_sigma = sqrt(max(diag(cov)[first_axis:first_axis+3])). */
+    float32_t variance = 0.0f;
+    for (int axis = first_axis; axis < first_axis + 3; ++axis) {
+        if (cov[axis * 6 + axis] > variance) variance = cov[axis * 6 + axis];
+    }
+    return sqrtf(variance);
+}
+
+/*
+ * Return the Euclidean gyro-bias estimation error:
+ *
+ *   error = ||estimated_bias - true_bias||_2
+ */
+static float32_t gyro_bias_error(const float32_t *estimated_bias,
+                                 const float32_t *true_bias) {
+    /* bias_error = ||estimated_bias - true_bias||_2. */
+    float32_t squared_error = 0.0f;
+    for (int axis = 0; axis < 3; ++axis) {
+        float32_t difference = estimated_bias[axis] - true_bias[axis];
+        squared_error += difference * difference;
+    }
+    return sqrtf(squared_error);
+}
+
+/*
+ * Run the fixed-seed UKF simulation. At each step:
+ *
+ *   truth_rotation = rotvec2quat(truth_rate dt)
+ *   q_truth+       = normalize(q_truth (*) truth_rotation)
+ *   gyro_measured  = truth_rate + truth_bias + N(0, 0.001^2 I)
+ *
+ * Every 100 steps, the active body-vector measurements are:
+ *
+ *   body[v] = unit(q_truth^-1 (*) reference[v] (*) q_truth
+ *                  + N(0, 0.01^2 I))
+ *
+ * The reported attitude error and averages are:
+ *
+ *   e[k]          = angle(q_estimate[k] (*) q_truth[k]^-1)
+ *   maximum_error = max(k, e[k])
+ *   average_mode  = sum(k in mode, e[k]) / count(k in mode)
+ *   bias_error    = ||estimated_bias - truth_bias||_2
+ */
+void test_iteration(void) {
+    enum { MODE_STEPS = 27000, MEASUREMENT_PERIOD_STEPS = 100, CYCLES = 10 };
+    const float32_t dt = 0.1f;
+    const float32_t radians_to_degrees = 180.0f / (float32_t)M_PI;
+    const float32_t warning_degrees[3] = {5.0f, 15.0f, 30.0f};
+    bool warning_reported[3] = {false};
+    const char *trace_path = getenv("ADCS_UKF_TRACE_CSV");
+    FILE *trace = NULL;
+    if (trace_path != NULL && trace_path[0] != '\0') {
+        trace = fopen(trace_path, "w");
+        if (trace == NULL) { perror(trace_path); exit(EXIT_FAILURE); }
+        fprintf(trace, "step,time_s,mode,update,error_before_deg,error_after_deg,"
+                       "bias_error_rad_s,att_sigma_max_deg,bias_sigma_max_rad_s,"
+                       "mag_pre_step_residual_deg,sun_pre_step_residual_deg\n");
+    }
+    float32_t covariance[36], process_noise[36], two_vector_noise[36], one_vector_noise[9];
+    float32_t body_vectors[6], reference_vectors[6];
+    float32_t next_error_state[6], next_quaternion[4], next_covariance[36];
+
+    /* MATLAB's truth bias and sensor-noise model, with a fixed seed. */
+    const float32_t truth_bias[3] = {0.002f, -0.001f, 0.0015f};
+    const float32_t truth_rate[3] = {0.018f, -0.011f, 0.014f};
+    const float32_t magnetic_field[3] = {22.0f, -12.0f, 34.0f}; /* microtesla */
+    const float32_t sun_field[3] = {0.2f, 0.8f, 0.4f};
+    unit_vector3(magnetic_field, reference_vectors);
+    unit_vector3(sun_field, reference_vectors + 3);
+    float32_t truth_quaternion[4] = {1, 0, 0, 0};
+    float32_t estimated_quaternion[4] = {1, 0, 0, 0};
+    float32_t error_state[6] = {0};
+    int two_vector_samples = 0, one_vector_samples = 0;
+    float32_t two_vector_error_sum = 0.0f, one_vector_error_sum = 0.0f;
+    float32_t maximum_attitude_error = 0.0f, block_error_sum = 0.0f;
+    float32_t block_maximum_error = 0.0f;
+    int maximum_error_step = 0, block_maximum_step = 0;
+    float32_t last_mag_residual = NAN, last_sun_residual = NAN;
+    char sun_residual_display[24] = "n/a";
+    initialize_filter_matrices(covariance, process_noise, two_vector_noise, one_vector_noise);
+    srand(42);
+    for (int step = 0; step < 2 * MODE_STEPS * CYCLES; ++step) {
+        bool two_vectors = (step % (2 * MODE_STEPS)) < MODE_STEPS;
+        const char *mode_name = two_vectors ? "2vec" : "1vec";
+        const int vector_count = two_vectors ? 2 : 1;
+
+        float32_t truth_rotation_step[3], truth_rotation_quaternion[4];
+        float32_t next_truth_quaternion[4], measured_gyro[3];
+
+        /*
+         * truth_rotation_step = truth_rate * dt
+         * measured_gyro = truth_rate + truth_bias + N(0, 0.001^2 I)
+         */
+        for (int axis = 0; axis < 3; ++axis) {
+            truth_rotation_step[axis] = truth_rate[axis] * dt;
+            measured_gyro[axis] = truth_rate[axis] + truth_bias[axis]
+                                  + normal_sample(0.0f, 0.001f);
         }
-        float body[3];
-        quat_apply(new_ref_to_body, ref, body);
-        for (int i = 0; i < 3; i++) {
-            body[i] = body[i] + normal_sample(0.0f, msmt_noise);
-        }
-        float d_body[3];
-        float c_prod[3];
-        cross(simulated_gyro_measurement, body, c_prod);
-        for (int i = 0; i < 3; i++) {
-            d_body[i] = (body[i] - last_body[i]) / dt + c_prod[i];
-        }
-        float ref_norm = l2_norm(ref, 3);
-        float body_norm = l2_norm(body, 3);
-        float body_full[6] = {body[0], body[1], body[2], d_body[0], d_body[1], d_body[2]};
-        float reference[6] = {ref[0], ref[1], ref[2], d_ref[0], d_ref[1], d_ref[2]};
+        /* truth_rotation_quaternion = rotvec2quat(truth_rate * dt). */
+        rotationvec2quat(truth_rotation_step, truth_rotation_quaternion);
 
-        float new_error_state[6];
-        float new_quat[4];
-        float new_P[36];
-        iterate(state, current_guess, cov, body_full, reference, simulated_gyro_measurement, Q, R,
-                dt, new_error_state, new_quat, new_P);
+        /* next_truth_quaternion = q_truth (*) truth_rotation_quaternion. */
+        quat_multiply(truth_quaternion, truth_rotation_quaternion, next_truth_quaternion);
 
-        new_error_state[0] = 0;
-        new_error_state[1] = 0;
-        new_error_state[2] = 0;
-        new_error_state[3] = 0;
-        new_error_state[4] = 0;
-        new_error_state[5] = 0;
+        /* q_truth_next = next_truth_quaternion / ||next_truth_quaternion||_2. */
+        quat_norm(next_truth_quaternion, truth_quaternion);
 
-        memcpy(state, new_error_state, sizeof(float) * 6);
-        memcpy(cov, new_P, sizeof(float) * 36);
-        memcpy(current_guess, new_quat, sizeof(float) * 4);
-        quat_norm(current_guess, current_guess);
-        if (iter % 50 == 0) {
-            float current_q_err[4];
-            quat_diff(true_body_to_ref, current_guess, current_q_err);
-            float current_err[3];
-            quat2rotationvec(current_q_err, current_err);
-            printf("Msmt Error: %f\n",
-                   (180.0f / M_PI)
-                       * (sqrtf(current_err[0] * current_err[0] + current_err[1] * current_err[1]
-                                + current_err[2] * current_err[2])));
-            printf("Estimated Bias: ");
-            float bias[3] = {state[3], state[4], state[5]};
-            arm_scale_f32(bias, 180.0f / M_PI, bias, 3);
-            print_matrix(bias, 1, 3);
-            printf("\n");
+        bool update = step % MEASUREMENT_PERIOD_STEPS == 0;
+        if (update) {
+            simulate_body_vectors(truth_quaternion, magnetic_field, sun_field,
+                                  two_vectors, body_vectors);
+            float32_t predicted_inverse[4], predicted_body[3];
+
+            /* predicted_body = q_estimate^-1 (*) reference_vector (*) q_estimate. */
+            quat_inv(estimated_quaternion, predicted_inverse);
+            quat_apply(predicted_inverse, reference_vectors, predicted_body);
+            last_mag_residual = vector_angle(body_vectors, predicted_body);
+            last_sun_residual = NAN;
+            if (two_vectors) {
+                quat_apply(predicted_inverse, reference_vectors + 3, predicted_body);
+                last_sun_residual = vector_angle(body_vectors + 3, predicted_body);
+                snprintf(sun_residual_display, sizeof(sun_residual_display), "%.3fdeg",
+                         last_sun_residual * radians_to_degrees);
+            } else {
+                strcpy(sun_residual_display, "n/a");
+            }
         }
-        memcpy(last_body, body, sizeof(float) * 3);
-        memcpy(last_ref, ref, sizeof(float) * 3);
-
-        // THE IMPORTANT PART: REF NEEDS TO CHANGE A DECENT AMT
-        for (int i = 0; i < 3; i++) {
-            ref[i] = ref[i] + normal_sample(0.0f, 0.1f);
+        /* attitude_error = angle(q_estimate (*) q_truth^-1). */
+        float32_t error_before = quaternion_angle(estimated_quaternion, truth_quaternion);
+        float32_t sigma_before = 0.0f;
+        if (step > 0 && step % MODE_STEPS == 0) sigma_before = max_axis_sigma(covariance, 0);
+        const float32_t *active_noise = two_vectors ? two_vector_noise : one_vector_noise;
+        const float32_t *body_input = update ? body_vectors : NULL;
+        const float32_t *reference_input = update ? reference_vectors : NULL;
+        const float32_t *noise_input = update ? active_noise : NULL;
+        arm_status status = iterate(error_state, estimated_quaternion, covariance,
+                                    body_input, reference_input, measured_gyro,
+                                    process_noise, noise_input, dt, vector_count, update,
+                                    next_error_state, next_quaternion, next_covariance);
+        if (status != ARM_MATH_SUCCESS) {
+            fprintf(stderr, "UKF failed: step=%d time=%.1fs mode=%s update=%d status=%d "
+                            "error_before=%.3fdeg last_mag_residual=%.3fdeg\n",
+                    step, (step + 1) * dt, mode_name, update,
+                    status, error_before * radians_to_degrees,
+                    last_mag_residual * radians_to_degrees);
+            exit(EXIT_FAILURE);
         }
+        memcpy(error_state, next_error_state, sizeof(error_state));
+
+        /* dtheta was injected into next_quaternion, so retain only the bias. */
+        memset(error_state, 0, 3 * sizeof(float32_t));
+        memcpy(estimated_quaternion, next_quaternion, sizeof(estimated_quaternion));
+        memcpy(covariance, next_covariance, sizeof(covariance));
+        /* Include prediction steps as well as measurement updates in each mode. */
+        float32_t step_error = quaternion_angle(estimated_quaternion, truth_quaternion);
+        UKF_CHECK(isfinite(step_error));
+        if (step_error > maximum_attitude_error) {
+            maximum_attitude_error = step_error;
+            maximum_error_step = step;
+        }
+        if (step_error > block_maximum_error) {
+            block_maximum_error = step_error;
+            block_maximum_step = step;
+        }
+        block_error_sum += step_error;
+        float32_t bias_error = gyro_bias_error(error_state + 3, truth_bias);
+        float32_t error_degrees = step_error * radians_to_degrees;
+        if (step > 0 && step % MODE_STEPS == 0) {
+            printf("mode switch %s->%s: step=%d error %.3f->%.3fdeg "
+                   "att_sigma %.3f->%.3fdeg mag_residual=%.3fdeg sun_residual=%s\n",
+                   two_vectors ? "1vec" : "2vec", mode_name,
+                   step, error_before * radians_to_degrees, error_degrees,
+                   sigma_before * radians_to_degrees,
+                   max_axis_sigma(covariance, 0) * radians_to_degrees,
+                   last_mag_residual * radians_to_degrees, sun_residual_display);
+        }
+        for (int warning = 0; warning < 3; ++warning) {
+            if (!warning_reported[warning] && error_degrees >= warning_degrees[warning]) {
+                warning_reported[warning] = true;
+                printf("attitude crossed %.0fdeg: step=%d time=%.1fs mode=%s update=%d "
+                       "before=%.3fdeg after=%.3fdeg bias_error=%.6frad/s "
+                       "att_sigma=%.3fdeg last_mag_residual=%.3fdeg "
+                       "last_sun_residual=%s\n",
+                       warning_degrees[warning], step, (step + 1) * dt,
+                       mode_name, update,
+                       error_before * radians_to_degrees, error_degrees, bias_error,
+                       max_axis_sigma(covariance, 0) * radians_to_degrees,
+                       last_mag_residual * radians_to_degrees, sun_residual_display);
+            }
+        }
+        if (trace != NULL && (update || (step + 1) % MODE_STEPS == 0)) {
+            fprintf(trace, "%d,%.1f,%s,%d,%.6f,%.6f,%.8f,%.6f,%.8f,%.6f,%.6f\n",
+                    step, (step + 1) * dt, mode_name, update,
+                    error_before * radians_to_degrees, error_degrees, bias_error,
+                    max_axis_sigma(covariance, 0) * radians_to_degrees, max_axis_sigma(covariance, 3),
+                    update ? last_mag_residual * radians_to_degrees : NAN,
+                    update ? last_sun_residual * radians_to_degrees : NAN);
+        }
+        if (two_vectors) {
+            two_vector_error_sum += step_error;
+            ++two_vector_samples;
+        } else {
+            one_vector_error_sum += step_error;
+            ++one_vector_samples;
+        }
+        if ((step + 1) % MODE_STEPS == 0) {
+            printf("mode block %2d (%s, steps %d-%d): average=%.3fdeg "
+                   "peak=%.3fdeg at step %d final=%.3fdeg bias_error=%.6frad/s "
+                   "att_sigma=%.3fdeg\n",
+                   step / MODE_STEPS + 1, mode_name,
+                   step + 1 - MODE_STEPS, step,
+                   block_error_sum / MODE_STEPS * radians_to_degrees,
+                   block_maximum_error * radians_to_degrees, block_maximum_step,
+                   error_degrees, bias_error, max_axis_sigma(covariance, 0) * radians_to_degrees);
+            block_error_sum = 0.0f;
+            block_maximum_error = 0.0f;
+        }
+    }
+    float32_t bias_error = gyro_bias_error(error_state + 3, truth_bias);
+    float32_t attitude_error = quaternion_angle(estimated_quaternion, truth_quaternion);
+    printf("seeded simulation attitude error (rad): final %.6f, maximum %.6f at step %d, "
+           "average 2vec %.6f, average 1vec %.6f\n",
+           attitude_error, maximum_attitude_error, maximum_error_step,
+           two_vector_error_sum / two_vector_samples,
+           one_vector_error_sum / one_vector_samples);
+    printf("seeded simulation bias error: %.6f rad/s\n", bias_error);
+    if (trace != NULL) {
+        if (fclose(trace) != 0) { perror(trace_path); exit(EXIT_FAILURE); }
+        printf("UKF update trace: %s\n", trace_path);
     }
 }
