@@ -1,5 +1,6 @@
 #include "include/photodiode_determination.h"
-#include "declareFunctions.h"
+#include "Include/dsp/matrix_functions.h"
+#include "arm_math.h"
 #include "math.h"
 
 const int NUM_PAIRS = 9;
@@ -7,7 +8,7 @@ const int NUM_SELECTED_DIODES = 5;
 
 
 const float MAX_READING = 1.7f;
-
+const float MIN_READING = 0.17f;
 const float PHOTODIODES[18][3] = {
     {  0.8660254f,  -0.27968387f, -0.41445981f },
     { -0.8660254f,   0.27968387f,  0.41445981f },
@@ -39,8 +40,9 @@ const float PHOTODIODES[18][3] = {
 
 // Assumes photodiode_readings are passed in the same order as PHOTODIODES.
 // Pairs are 0-1, 2-3, ..., 16-17.
-void get_vec_from_photodiode_readings(float photodiode_readings[],
-                                      float estimated_sun_vector[]) {
+bool get_vec_from_photodiode_readings(float* photodiode_readings,
+                                      float* estimated_sun_vector) {
+    int valid_readings = 0;
     int selected_indices[NUM_SELECTED_DIODES];
     float selected_readings[NUM_SELECTED_DIODES];
 
@@ -66,6 +68,10 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
             brighter_reading = photodiode_readings[i1];
         }
 
+        if(brighter_reading > MIN_READING){
+            valid_readings += 1;
+        }
+
         int min_pos = 0;
         for (int i = 1; i < NUM_SELECTED_DIODES; i++) {
             if (selected_readings[i] < selected_readings[min_pos]) {
@@ -79,10 +85,14 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
         }
     }
 
+    if(valid_readings < 3){
+        return false;
+    }
+
     // Construct system of equations
 
-    float A[NUM_SELECTED_DIODES * 3];
-    float b[NUM_SELECTED_DIODES];
+    float32_t A[NUM_SELECTED_DIODES * 3];
+    float32_t b[NUM_SELECTED_DIODES];
 
     for (int i = 0; i < NUM_SELECTED_DIODES; i++) {
         int diode_index = selected_indices[i];
@@ -94,15 +104,28 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
         b[i] = selected_readings[i] / MAX_READING;
     }
 
-    // Least-squares inverse
-    pinv(A, NUM_SELECTED_DIODES, 3);
+    // Least-squares solve via normal equations: x = (A^T A)^-1 A^T b
+    arm_matrix_instance_f32 A_mat = {NUM_SELECTED_DIODES, 3, A};
 
-    // Solving using inverse
-    mul(A, b, false,
-        estimated_sun_vector,
-        3,
-        NUM_SELECTED_DIODES,
-        1);
+    float32_t A_T[3 * NUM_SELECTED_DIODES];
+    arm_matrix_instance_f32 A_T_mat = {3, NUM_SELECTED_DIODES, A_T};
+    arm_mat_trans_f32(&A_mat, &A_T_mat);
+
+    float32_t AtA[3 * 3];
+    arm_matrix_instance_f32 AtA_mat = {3, 3, AtA};
+    arm_mat_mult_f32(&A_T_mat, &A_mat, &AtA_mat);
+
+    float32_t AtA_inv[3 * 3];
+    arm_matrix_instance_f32 AtA_inv_mat = {3, 3, AtA_inv};
+    arm_mat_inverse_f32(&AtA_mat, &AtA_inv_mat);
+
+    float32_t Atb[3];
+    arm_matrix_instance_f32 Atb_mat = {3, 1, Atb};
+    arm_matrix_instance_f32 b_mat = {NUM_SELECTED_DIODES, 1, b};
+    arm_mat_mult_f32(&A_T_mat, &b_mat, &Atb_mat);
+
+    arm_matrix_instance_f32 result_mat = {3, 1, estimated_sun_vector};
+    arm_mat_mult_f32(&AtA_inv_mat, &Atb_mat, &result_mat);
 
     // Normalize output vector
     float mag = sqrtf(
@@ -114,4 +137,6 @@ void get_vec_from_photodiode_readings(float photodiode_readings[],
     estimated_sun_vector[0] /= mag;
     estimated_sun_vector[1] /= mag;
     estimated_sun_vector[2] /= mag;
+
+    return true;
 }

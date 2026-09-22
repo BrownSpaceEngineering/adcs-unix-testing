@@ -1,16 +1,85 @@
 #include "include/test.h"
-#include "declareFunctions.h"
+#include "Include/dsp/basic_math_functions.h"
+#include "Include/dsp/matrix_functions.h"
+#include "arm_math.h"
+#include "include/iterate.h"
+#include "include/laextension.h"
 #include "include/quat.h"
+#include "include/quest.h"
 #include "stdlib.h"
-#include "include/photodiode_determination.h"
+#include <float.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifndef M_PI
+#define M_PI PI
+#endif
+
+static float uniform_01(void) { return ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f); }
+
+static float normal_sample(float mean, float stddev) {
+    float u1 = uniform_01();
+    float u2 = uniform_01();
+    float mag = sqrtf(-2.0f * logf(u1));
+    float z0 = mag * cosf(2.0f * (float)M_PI * u2);
+    return mean + stddev * z0;
+}
+
+static void print_matrix(float32_t* A, int rows, int cols) {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            printf("%f ", A[i * cols + j]);
+        }
+        printf("\n");
+    }
+}
+
+static bool eps_close_matrix(float32_t* A, float32_t* B, int rows, int cols, float32_t eps) {
+    for (int i = 0; i < rows * cols; i++) {
+        if (fabsf(A[i] - B[i]) > eps) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // put test function definitions here
 
-void test_run_all(void) { test_matrix_product();
-test_quaternion(); 
-test_photodiode_sun_vector();}
+void test_run_all(void) {
+    // test_quest();
+    test_iteration_1vec();
+    // test_iteration_2vec();
+}
 
+void test_quest(void) {
+    float true_ref_to_body[4] = {0.78355, 0.44793, 0.32448, 0.28304};
+    float true_body_to_ref[4];
+    quat_inv(true_ref_to_body, true_body_to_ref);
+    float ref_1[3] = {1, 2, 3};
+    float ref_2[3] = {-4, 3, -6};
+    float ref[6] = {1, 2, 3, -4, 3, -6};
 
+    float body_1[3];
+    quat_apply(true_ref_to_body, ref_1, body_1);
+    float body_2[3];
+    quat_apply(true_ref_to_body, ref_2, body_2);
+    float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
+
+    float guess[4];
+    quest(body, ref, 2, guess);
+
+    if (eps_close_matrix(guess, true_body_to_ref, 1, 4, 1e-4)) {
+        printf("QuEST Test Passed\n");
+        print_matrix(guess, 1, 4);
+        print_matrix(true_body_to_ref, 1, 4);
+    } else {
+        printf("QuEST Test Failed\n");
+        print_matrix(guess, 1, 4);
+        print_matrix(true_body_to_ref, 1, 4);
+    }
+}
 void test_matrix_product(void) {
 
     printf("----- testing matrix product -----\n");
@@ -21,10 +90,13 @@ void test_matrix_product(void) {
     float C[4] = {0.};
     float C_expected[4] = {19., 22., 43., 50.};
 
-    mul(A, B, false, C, 2, 2, 2);
-    debug_matrix(C, 2, 2);
+    arm_matrix_instance_f32 A_mat = {2, 2, A};
+    arm_matrix_instance_f32 B_mat = {2, 2, B};
+    arm_matrix_instance_f32 C_mat = {2, 2, C};
+    arm_mat_mult_f32(&A_mat, &B_mat, &C_mat);
+    print_matrix(C, 2, 2);
 
-    if (dbl_eps_close_matrix(C, C_expected, 2, 2, DBL_EPSILON)) {
+    if (eps_close_matrix(C, C_expected, 2, 2, FLT_EPSILON)) {
         printf("2 * 2 matrix product test passed!\n");
     } else {
         printf("2 * 2 matrix product test failed!\n");
@@ -34,29 +106,32 @@ void test_matrix_product(void) {
     float identity[4 * 4] = {0.};
     float large_result[4 * 4] = {0.};
 
-    eye(identity, 4, 4);
+    eye(identity, 4);
 
-    mul(identity, identity, false, large_result, 4, 4, 4);
+    arm_matrix_instance_f32 identity_mat = {4, 4, identity};
+    arm_matrix_instance_f32 large_result_mat = {4, 4, large_result};
+    arm_mat_mult_f32(&identity_mat, &identity_mat, &large_result_mat);
 
-    if (dbl_eps_close_matrix(identity, large_result, 4, 4, DBL_EPSILON)) {
+    if (eps_close_matrix(identity, large_result, 4, 4, FLT_EPSILON)) {
         printf("Identity matrix squared test passed!\n");
     } else {
         printf("Identity matrix squared test failed!\n");
     }
 
     float A_large[4 * 4] = {1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.};
+    arm_matrix_instance_f32 A_large_mat = {4, 4, A_large};
 
-    mul(A_large, identity, false, large_result, 4, 4, 4);
+    arm_mat_mult_f32(&A_large_mat, &identity_mat, &large_result_mat);
 
-    if (dbl_eps_close_matrix(A_large, large_result, 4, 4, DBL_EPSILON)) {
+    if (eps_close_matrix(A_large, large_result, 4, 4, FLT_EPSILON)) {
         printf("Identity post-multiplication test passed!\n");
     } else {
         printf("Identity post-multiplication test failed!\n");
     }
 
-    mul(identity, A_large, false, large_result, 4, 4, 4);
+    arm_mat_mult_f32(&identity_mat, &A_large_mat, &large_result_mat);
 
-    if (dbl_eps_close_matrix(A_large, large_result, 4, 4, DBL_EPSILON)) {
+    if (eps_close_matrix(A_large, large_result, 4, 4, FLT_EPSILON)) {
         printf("Identity pre-multiplication test passed!\n");
     } else {
         printf("Identity pre-multiplication test failed!\n");
@@ -64,6 +139,7 @@ void test_matrix_product(void) {
 
     float B_large[4 * 4] = {5.24829, 6.21496, 3.27374, 3.49223, 1.52040, 3.70849, 7.21884, 0.41667,
                             7.77438, 8.24807, 8.63347, 2.01096, 8.29170, 1.46735, 8.53606, 5.14221};
+    arm_matrix_instance_f32 B_large_mat = {4, 4, B_large};
 
     float C_large[4 * 4] = {1.92304, 0.14043, 1.64762, 4.97396, 0.68077, 4.99275, 7.04041, 2.44857,
                             8.22049, 1.66745, 7.94150, 0.56302, 2.68638, 7.59450, 1.43236, 3.59834};
@@ -72,9 +148,10 @@ void test_matrix_product(void) {
         = {50.6168, 63.7473, 83.4036, 55.732,  65.9102, 33.9305, 86.5396, 22.2066,
            96.939,  71.9404, 142.322, 70.9624, 100.929, 61.7765, 99.1469, 68.1449};
 
-    mul(B_large, C_large, false, large_result, 4, 4, 4);
+    arm_matrix_instance_f32 C_large_mat = {4, 4, C_large};
+    arm_mat_mult_f32(&B_large_mat, &C_large_mat, &large_result_mat);
 
-    if (dbl_eps_close_matrix(large_result, large_multiplication_expected, 4, 4, DBL_EPSILON)) {
+    if (eps_close_matrix(large_result, large_multiplication_expected, 4, 4, FLT_EPSILON)) {
         printf("Large matrix product test passed!\n");
     } else {
         printf("Large matrix product test failed!\n");
@@ -85,13 +162,12 @@ void test_quaternion(void) {
     // Multiplication Tests
     float res_quat[4];
     float res_vec[3];
-    float test_qd[4];
 
     // Identity
     float id_quat[4] = {1, 0, 0, 0};
     quat_multiply(id_quat, id_quat, res_quat);
     float expected_res_id[4] = {1, 0, 0, 0};
-    if (f_eps_close_matrix(res_quat, expected_res_id, 1, 4, FLT_EPSILON)) {
+    if (eps_close_matrix(res_quat, expected_res_id, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Multiplication Identity Test Passed\n");
     } else {
         printf("Quaternion Multiplication Identity Test Failed\n");
@@ -102,7 +178,7 @@ void test_quaternion(void) {
     float rp_quat_2[4] = {0.78805728, 0.07242287, 0.48362778, 0.37393157};
     quat_multiply(rp_quat_1, rp_quat_2, res_quat);
     float expected_res_rp[4] = {0.203702175001, 0.181091486099, 0.134968324367, 0.952625236179};
-    if (f_eps_close_matrix(res_quat, expected_res_rp, 1, 4, FLT_EPSILON)) {
+    if (eps_close_matrix(res_quat, expected_res_rp, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Multiplication Random Pair Test Passed\n");
     } else {
         printf("Quaternion Multiplication Random Pair Test Failed\n");
@@ -111,7 +187,7 @@ void test_quaternion(void) {
     // Reverse Random Pair
     quat_multiply(rp_quat_2, rp_quat_1, res_quat);
     float expected_res_rp_inv[4] = {0.203702175001, 0.753383864322, 0.451035727503, 0.432995312932};
-    if (f_eps_close_matrix(res_quat, expected_res_rp_inv, 1, 4, FLT_EPSILON)) {
+    if (eps_close_matrix(res_quat, expected_res_rp_inv, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Multiplication Reverse Random Pair Test Passed\n");
     } else {
         printf("Quaternion Multiplication Reverse Random Pair Test Failed\n");
@@ -121,7 +197,7 @@ void test_quaternion(void) {
     float unnorm_quat[4] = {0.44245429, 0.97492992, 0.24490942, 0.74845996};
     float expected_norm_quat[4] = {0.33290518, 0.73354294, 0.18427127, 0.56314562};
     quat_norm(unnorm_quat, res_quat);
-    if (f_eps_close_matrix(res_quat, expected_norm_quat, 1, 4, FLT_EPSILON)) {
+    if (eps_close_matrix(res_quat, expected_norm_quat, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Normalization Test Passed\n");
     } else {
         printf("Quaternion Normalization Test Failed\n");
@@ -131,7 +207,7 @@ void test_quaternion(void) {
     float quat_to_invert[4] = {7, 4, 5, 9};
     float expected_inverted_quat[4] = {0.0409357, -0.0233918, -0.0292398, -0.0526316};
     quat_inv(quat_to_invert, res_quat);
-    if (f_eps_close_matrix(res_quat, expected_inverted_quat, 1, 4, FLT_EPSILON)) {
+    if (eps_close_matrix(res_quat, expected_inverted_quat, 1, 4, FLT_EPSILON)) {
         printf("Quaternion Inversion Test Passed\n");
     } else {
         printf("Quaternion Inversion Test Failed\n");
@@ -140,7 +216,7 @@ void test_quaternion(void) {
     // Test quat2rotvec using one of the random pair quaternions
     float expected_rp_1_rotvec[3] = {1.2502, 0.0153, 1.3862};
     quat2rotationvec(rp_quat_1, res_vec);
-    if (f_eps_close_matrix(res_vec, expected_rp_1_rotvec, 1, 3, 1e-4)) {
+    if (eps_close_matrix(res_vec, expected_rp_1_rotvec, 1, 3, 1e-4)) {
         printf("Quaternion2RotVec Test Passed\n");
     } else {
         printf("Quaternion2RotVec Test Failed\n");
@@ -149,7 +225,7 @@ void test_quaternion(void) {
     // Test quat_diff using the random pair quats from before
     float expected_quat_diff[4] = {0.7343, -0.66718, 0.12461, 0.012084};
     quat_diff(rp_quat_1, rp_quat_2, res_quat);
-    if (f_eps_close_matrix(res_quat, expected_quat_diff, 1, 4, 1e-4)) {
+    if (eps_close_matrix(res_quat, expected_quat_diff, 1, 4, 1e-4)) {
         printf("Quaternion Diff Test Passed\n");
     } else {
         printf("Quaternion Diff Test Failed\n");
@@ -158,7 +234,7 @@ void test_quaternion(void) {
     // Test the robustness of quatdiff
     float robustness_test[4];
     quat_multiply(res_quat, rp_quat_1, robustness_test);
-    if (f_eps_close_matrix(robustness_test, rp_quat_2, 1, 4, 1e-4)) {
+    if (eps_close_matrix(robustness_test, rp_quat_2, 1, 4, 1e-4)) {
         printf("Quaternion Robustness Test Passed\n");
     } else {
         printf("Quaternion Robustness Test Failed\n");
@@ -168,7 +244,7 @@ void test_quaternion(void) {
     float random_vec[3] = {0.96667295, 0.7002543, 0.61082435};
     float expected_quat_conv[4] = {0.78355, 0.44793, 0.32448, 0.28304};
     rotationvec2quat(random_vec, res_quat);
-    if (f_eps_close_matrix(res_quat, expected_quat_conv, 1, 4, 1e-4)) {
+    if (eps_close_matrix(res_quat, expected_quat_conv, 1, 4, 1e-4)) {
         printf("RotVec2Quat Test Passed\n");
     } else {
         printf("RotVec2Quat Test Failed\n");
@@ -177,7 +253,7 @@ void test_quaternion(void) {
     // Test quat apply
     float expected_rotated_vec[3] = {0.1828, 0.1028, 1.3244};
     quat_apply(rp_quat_1, random_vec, res_vec);
-    if (f_eps_close_matrix(res_vec, expected_rotated_vec, 1, 3, 1e-4)) {
+    if (eps_close_matrix(res_vec, expected_rotated_vec, 1, 3, 1e-4)) {
         printf("Quat Apply Test Passed\n");
     } else {
         printf("Quat Apply Test Failed\n");
@@ -185,159 +261,219 @@ void test_quaternion(void) {
     }
 }
 
-void test_photodiode_sun_vector(void) {
-    float readings[18] = {0.0f};
-    float estimated_sun_vector[3] = {0.0f};
+void test_iteration_2vec(void) {
+    float dt = 0.5;
+    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
+    quat_norm(true_body_to_ref, true_body_to_ref);
 
-    /*
-     * Test 1:
-     * Sun is exactly in the direction of diode 0.
-    */
-    float true_sun_1[3] = {
-        0.8660254f,
-       -0.27968387f,
-       -0.41445981f
-    };
+    float current_guess[4];
+    for (int i = 0; i < 4; i++) {
+        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
+    }
+    quat_norm(current_guess, current_guess);
 
-    for (int i = 0; i < 18; i++) {
-        float dot_prod =
-            PHOTODIODES[i][0] * true_sun_1[0] +
-            PHOTODIODES[i][1] * true_sun_1[1] +
-            PHOTODIODES[i][2] * true_sun_1[2];
+    float true_omega[3] = {2, 0.5, -1};
+    float true_bias[3] = {0.001f, 0.001f, 0.001f};
+    arm_scale_f32(true_omega, M_PI / 180.0f, true_omega, 3);
 
-        if (dot_prod > 0.0f) {
-            readings[i] = MAX_READING * dot_prod;
-        } else {
-            readings[i] = 0.0f;
+    float gyro_noise = 0.001;
+    float msmt_noise = 0.03;
+
+    float state[6] = {0, 0, 0, 0, 0, 0};
+    float cov[36];
+    float Q[36];
+    float R[36];
+    eye(cov, 6);
+    arm_scale_f32(cov, 0.1, cov, 36);
+    eye(R, 6);
+    arm_scale_f32(R, 0.1, R, 36);
+    eye(Q, 6);
+    arm_scale_f32(Q, 0.01, Q, 36);
+
+    float ref[6] = {40, 0, 0, 0, 40, 0};
+    float ref_1[3] = {40, 0, 0};
+    float ref_2[3] = {0, 40, 0};
+
+    for (int iter = 0; iter < 1000; iter++) {
+        float simulated_gyro_measurement[3];
+        for (int i = 0; i < 3; i++) {
+            float uniform_noise = (2.0f * ((float)rand() / (float)RAND_MAX)) - 1.0f;
+            simulated_gyro_measurement[i]
+                = true_omega[i] + true_bias[i] + uniform_noise * gyro_noise;
+        }
+
+        float delta_vec[3];
+        memcpy(delta_vec, true_omega, sizeof(float) * 3);
+        arm_scale_f32(delta_vec, dt, delta_vec, 3);
+
+        float delta_q[4];
+        rotationvec2quat(delta_vec, delta_q);
+
+        float new_true_body_to_ref[4];
+        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
+        quat_norm(new_true_body_to_ref, true_body_to_ref);
+        float new_ref_to_body[4];
+        quat_inv(true_body_to_ref, new_ref_to_body);
+
+        float body_1[3];
+        float body_2[3];
+        quat_apply(new_ref_to_body, ref_1, body_1);
+        quat_apply(new_ref_to_body, ref_2, body_2);
+        float body[6] = {body_1[0], body_1[1], body_1[2], body_2[0], body_2[1], body_2[2]};
+        for (int i = 0; i < 6; i++) {
+            float uniform_noise = (2.0f * ((float)rand() / (float)RAND_MAX)) - 1.0f;
+            body[i] = body[i] + uniform_noise * msmt_noise;
+        }
+
+        float new_error_state[6];
+        float new_quat[4];
+        float new_P[36];
+        iterate(state, current_guess, cov, body, ref, simulated_gyro_measurement, Q, R, dt,
+                new_error_state, new_quat, new_P);
+
+        new_error_state[0] = 0;
+        new_error_state[1] = 0;
+        new_error_state[2] = 0;
+
+        memcpy(state, new_error_state, sizeof(float) * 6);
+        memcpy(cov, new_P, sizeof(float) * 36);
+        memcpy(current_guess, new_quat, sizeof(float) * 4);
+        quat_norm(current_guess, current_guess);
+        if (iter % 50 == 0) {
+            float current_q_err[4];
+            quat_diff(true_body_to_ref, current_guess, current_q_err);
+            float current_err[3];
+            quat2rotationvec(current_q_err, current_err);
+            printf("Estimate Error: %f\n",
+                   (sqrtf(current_err[0] * current_err[0] + current_err[1] * current_err[1]
+                          + current_err[2] * current_err[2])));
+            printf("Estimated Bias: ");
+            float bias[3] = {state[3], state[4], state[5]};
+            arm_scale_f32(bias, 180.0f / M_PI, bias, 3);
+            print_matrix(bias, 1, 3);
+            printf("\n");
         }
     }
+}
 
-    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+void test_iteration_1vec(void) {
+    float dt = 0.5;
+    float true_body_to_ref[4] = {0.2812, -0.6998, 0.5497, -0.3592};
+    float true_ref_to_body[4];
+    quat_norm(true_body_to_ref, true_body_to_ref);
+    quat_inv(true_body_to_ref, true_ref_to_body);
 
-    if (f_eps_close_matrix(estimated_sun_vector, true_sun_1, 1, 3, 1e-3f)) {
-        printf("Photodiode Exact Diode Direction Test Passed\n");
-    } else {
-        printf("Photodiode Exact Diode Direction Test Failed\n");
-        printf("Expected: %f, %f, %f\n", true_sun_1[0], true_sun_1[1], true_sun_1[2]);
-        printf("Got:      %f, %f, %f\n",
-               estimated_sun_vector[0],
-               estimated_sun_vector[1],
-               estimated_sun_vector[2]);
+    float current_guess[4];
+    for (int i = 0; i < 4; i++) {
+        current_guess[i] = true_body_to_ref[i] + normal_sample(0.05f, 0.1f);
     }
+    quat_norm(current_guess, current_guess);
 
-    /*
-     * Test 2:
-     * Sun points in +Z direction.
-     */
-    float true_sun_2[3] = {0.0f, 0.0f, 1.0f};
+    float true_omega[3] = {2, 0.5, -0.5};
+    float true_bias[3] = {0.001f, 0.001f, 0.001f};
+    arm_scale_f32(true_omega, M_PI / 180.0f, true_omega, 3);
 
-    for (int i = 0; i < 18; i++) {
-        float dot_prod =
-            PHOTODIODES[i][0] * true_sun_2[0] +
-            PHOTODIODES[i][1] * true_sun_2[1] +
-            PHOTODIODES[i][2] * true_sun_2[2];
+    float gyro_noise = 0.001;
+    float msmt_noise = 0.03;
 
-        if (dot_prod > 0.0f) {
-            readings[i] = MAX_READING * dot_prod;
-        } else {
-            readings[i] = 0.0f;
+    float state[6] = {0, 0, 0, 0, 0, 0};
+    float cov[36];
+    float Q[36];
+    float R[36];
+    eye(cov, 6);
+    arm_scale_f32(cov, 0.1, cov, 36);
+    memset(R, 0, sizeof(float) * 36);
+    R[0] = 0.03f;
+    R[7] = 0.03f;
+    R[14] = 0.03f;
+    R[21] = 1.0f;
+    R[28] = 1.0f;
+    R[35] = 1.0f;
+    eye(Q, 6);
+    arm_scale_f32(Q, 0.01, Q, 36);
+
+    float ref[3] = {40, -40, 30};
+    float last_ref[3] = {40, -40, 30};
+    float last_body[3];
+    quat_apply(true_ref_to_body, last_ref, last_body);
+
+    for (int iter = 0; iter < 1000; iter++) {
+        float simulated_gyro_measurement[3];
+        for (int i = 0; i < 3; i++) {
+            simulated_gyro_measurement[i] = true_omega[i] + normal_sample(true_bias[i], gyro_noise);
         }
-    }
 
-    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+        float delta_vec[3];
+        memcpy(delta_vec, true_omega, sizeof(float) * 3);
+        arm_scale_f32(delta_vec, dt, delta_vec, 3);
 
-    if (f_eps_close_matrix(estimated_sun_vector, true_sun_2, 1, 3, 1e-3f)) {
-        printf("Photodiode +Z Direction Test Passed\n");
-    } else {
-        printf("Photodiode +Z Direction Test Failed\n");
-        printf("Expected: %f, %f, %f\n", true_sun_2[0], true_sun_2[1], true_sun_2[2]);
-        printf("Got:      %f, %f, %f\n",
-               estimated_sun_vector[0],
-               estimated_sun_vector[1],
-               estimated_sun_vector[2]);
-    }
+        float delta_q[4];
+        rotationvec2quat(delta_vec, delta_q);
 
-    /*
-     * Test 3:
-     * Sun points in +X direction.
-     */
-    float true_sun_3[3] = {1.0f, 0.0f, 0.0f};
+        float new_true_body_to_ref[4];
+        quat_multiply(true_body_to_ref, delta_q, new_true_body_to_ref);
+        quat_norm(new_true_body_to_ref, true_body_to_ref);
+        float new_ref_to_body[4];
+        quat_inv(true_body_to_ref, new_ref_to_body);
 
-    for (int i = 0; i < 18; i++) {
-        float dot_prod =
-            PHOTODIODES[i][0] * true_sun_3[0] +
-            PHOTODIODES[i][1] * true_sun_3[1] +
-            PHOTODIODES[i][2] * true_sun_3[2];
+        float d_ref[3];
+        for (int i = 0; i < 3; i++) {
+            d_ref[i] = (ref[i] - last_ref[i]) / dt;
+        }
+        float body[3];
+        quat_apply(new_ref_to_body, ref, body);
+        for (int i = 0; i < 3; i++) {
+            body[i] = body[i] + normal_sample(0.0f, msmt_noise);
+        }
+        float d_body[3];
+        float c_prod[3];
+        cross(simulated_gyro_measurement, body, c_prod);
+        for (int i = 0; i < 3; i++) {
+            d_body[i] = (body[i] - last_body[i]) / dt + c_prod[i];
+        }
+        float ref_norm = l2_norm(ref, 3);
+        float body_norm = l2_norm(body, 3);
+        float body_full[6] = {body[0], body[1], body[2], d_body[0], d_body[1], d_body[2]};
+        float reference[6] = {ref[0], ref[1], ref[2], d_ref[0], d_ref[1], d_ref[2]};
 
-        readings[i] = (dot_prod > 0.0f) ? MAX_READING * dot_prod : 0.0f;
-    }
+        float new_error_state[6];
+        float new_quat[4];
+        float new_P[36];
+        iterate(state, current_guess, cov, body_full, reference, simulated_gyro_measurement, Q, R,
+                dt, new_error_state, new_quat, new_P);
 
-    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
+        new_error_state[0] = 0;
+        new_error_state[1] = 0;
+        new_error_state[2] = 0;
+        new_error_state[3] = 0;
+        new_error_state[4] = 0;
+        new_error_state[5] = 0;
 
-    if (f_eps_close_matrix(estimated_sun_vector, true_sun_3, 1, 3, 1e-3f)) {
-        printf("Photodiode +X Direction Test Passed\n");
-    } else {
-        printf("Photodiode +X Direction Test Failed\n");
-        printf("Expected: %f, %f, %f\n", true_sun_3[0], true_sun_3[1], true_sun_3[2]);
-        printf("Got:      %f, %f, %f\n",
-               estimated_sun_vector[0],
-               estimated_sun_vector[1],
-               estimated_sun_vector[2]);
-    }
+        memcpy(state, new_error_state, sizeof(float) * 6);
+        memcpy(cov, new_P, sizeof(float) * 36);
+        memcpy(current_guess, new_quat, sizeof(float) * 4);
+        quat_norm(current_guess, current_guess);
+        if (iter % 50 == 0) {
+            float current_q_err[4];
+            quat_diff(true_body_to_ref, current_guess, current_q_err);
+            float current_err[3];
+            quat2rotationvec(current_q_err, current_err);
+            printf("Msmt Error: %f\n",
+                   (180.0f / M_PI)
+                       * (sqrtf(current_err[0] * current_err[0] + current_err[1] * current_err[1]
+                                + current_err[2] * current_err[2])));
+            printf("Estimated Bias: ");
+            float bias[3] = {state[3], state[4], state[5]};
+            arm_scale_f32(bias, 180.0f / M_PI, bias, 3);
+            print_matrix(bias, 1, 3);
+            printf("\n");
+        }
+        memcpy(last_body, body, sizeof(float) * 3);
+        memcpy(last_ref, ref, sizeof(float) * 3);
 
-    /*
-     * Test 4:
-     * Sun points in +Y direction.
-     */
-    float true_sun_4[3] = {0.0f, 1.0f, 0.0f};
-
-    for (int i = 0; i < 18; i++) {
-        float dot_prod =
-            PHOTODIODES[i][0] * true_sun_4[0] +
-            PHOTODIODES[i][1] * true_sun_4[1] +
-            PHOTODIODES[i][2] * true_sun_4[2];
-
-        readings[i] = (dot_prod > 0.0f) ? MAX_READING * dot_prod : 0.0f;
-    }
-
-    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
-
-    if (f_eps_close_matrix(estimated_sun_vector, true_sun_4, 1, 3, 1e-3f)) {
-        printf("Photodiode +Y Direction Test Passed\n");
-    } else {
-        printf("Photodiode +Y Direction Test Failed\n");
-        printf("Expected: %f, %f, %f\n", true_sun_4[0], true_sun_4[1], true_sun_4[2]);
-        printf("Got:      %f, %f, %f\n",
-               estimated_sun_vector[0],
-               estimated_sun_vector[1],
-               estimated_sun_vector[2]);
-    }
-
-    /*
-     * Test 5:
-     * Sun points in a normalized arbitrary direction.
-     */
-    float true_sun_5[3] = {0.57735027f, 0.57735027f, 0.57735027f};
-
-    for (int i = 0; i < 18; i++) {
-        float dot_prod =
-            PHOTODIODES[i][0] * true_sun_5[0] +
-            PHOTODIODES[i][1] * true_sun_5[1] +
-            PHOTODIODES[i][2] * true_sun_5[2];
-
-        readings[i] = (dot_prod > 0.0f) ? MAX_READING * dot_prod : 0.0f;
-    }
-
-    get_vec_from_photodiode_readings(readings, estimated_sun_vector);
-
-    if (f_eps_close_matrix(estimated_sun_vector, true_sun_5, 1, 3, 1e-3f)) {
-        printf("Photodiode Arbitrary Direction Test Passed\n");
-    } else {
-        printf("Photodiode Arbitrary Direction Test Failed\n");
-        printf("Expected: %f, %f, %f\n", true_sun_5[0], true_sun_5[1], true_sun_5[2]);
-        printf("Got:      %f, %f, %f\n",
-               estimated_sun_vector[0],
-               estimated_sun_vector[1],
-               estimated_sun_vector[2]);
+        // THE IMPORTANT PART: REF NEEDS TO CHANGE A DECENT AMT
+        for (int i = 0; i < 3; i++) {
+            ref[i] = ref[i] + normal_sample(0.0f, 0.1f);
+        }
     }
 }
