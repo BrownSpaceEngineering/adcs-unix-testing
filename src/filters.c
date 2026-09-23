@@ -14,6 +14,15 @@
  * \param sigma The standard deviation of the Gaussian kernel.
  */
 void gaussian_smooth_1d(float32_t* src, float32_t* dst, int n, float32_t sigma) {
+    if (n <= 0) {
+        return;
+    }
+    if (n == 1 || !(sigma > 0.0f)) {
+        for (int i = 0; i < n; i++) {
+            dst[i] = src[i];
+        }
+        return;
+    }
     int radius = (int)(3.0 * sigma + 0.5);
     if (radius > GAUSSIAN_RADIUS) { radius = GAUSSIAN_RADIUS; }
     int ksize = 2 * radius + 1;
@@ -38,9 +47,13 @@ void gaussian_smooth_1d(float32_t* src, float32_t* dst, int n, float32_t sigma) 
     for (int i = 0; i < n; i++) {
         float32_t val = 0.0;
         for (int t = 0; t < ksize; t++) {
-            int j = i + t - radius;
-            if (j < 0)  j = -j;             // reflect left
-            if (j >= n) j = 2*n - 2 - j;    // reflect right
+            // Reflect about the end samples. The signal is periodic with period 2n - 2, so this
+            // stays in bounds even when n is smaller than the kernel radius (the old single
+            // reflection could index before the start of src).
+            int period = 2 * n - 2;
+            int j = (i + t - radius) % period;
+            if (j < 0)  j += period;
+            if (j >= n) j = period - j;
             val += src[j] * kernel[t];
         }
         dst[i] = val;
@@ -60,6 +73,9 @@ void gaussian_smooth_1d(float32_t* src, float32_t* dst, int n, float32_t sigma) 
  */
 // TODO: Why does this use doubles? Should we make a float version?
 void holtz_double_exp_filter(float* src, float* dst, int n, float alpha, float beta){
+    if (n <= 0) {
+        return;
+    }
     double level = src[0];
     double trend = (n > 1) ? src[1] - src[0] : 0.0;
 
@@ -84,7 +100,10 @@ void holtz_double_exp_filter(float* src, float* dst, int n, float alpha, float b
  * \param alpha The smoothing parameter.
  */
 void exponential_filter(float* src, float* dst, int n, float alpha){
-     dst[0] = src[0];
+    if (n <= 0) {
+        return;
+    }
+    dst[0] = src[0];
 
     for (int i = 1; i < n; i++){
         dst[i] = alpha * src[i] + (1.0 - alpha) * dst[i - 1];

@@ -3,8 +3,9 @@
 #include "arm_math.h"
 #include "math.h"
 
-const int NUM_PAIRS = 9;
-const int NUM_SELECTED_DIODES = 5;
+// #defines rather than `const int` so the arrays below aren't variable-length arrays
+#define NUM_PAIRS 9
+#define NUM_SELECTED_DIODES 5
 
 
 const float MAX_READING = 1.7f;
@@ -40,7 +41,7 @@ const float PHOTODIODES[18][3] = {
 
 // Assumes photodiode_readings are passed in the same order as PHOTODIODES.
 // Pairs are 0-1, 2-3, ..., 16-17.
-bool get_vec_from_photodiode_readings(float* photodiode_readings,
+bool get_vec_from_photodiode_readings(const float* photodiode_readings,
                                       float* estimated_sun_vector) {
     int valid_readings = 0;
     int selected_indices[NUM_SELECTED_DIODES];
@@ -59,6 +60,10 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
 
         int brighter_index;
         float brighter_reading;
+
+        if (!isfinite(photodiode_readings[i0]) || !isfinite(photodiode_readings[i1])) {
+            return false;
+        }
 
         if (photodiode_readings[i0] >= photodiode_readings[i1]) {
             brighter_index = i0;
@@ -117,7 +122,10 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
 
     float32_t AtA_inv[3 * 3];
     arm_matrix_instance_f32 AtA_inv_mat = {3, 3, AtA_inv};
-    arm_mat_inverse_f32(&AtA_mat, &AtA_inv_mat);
+    // (arm_mat_inverse_f32 overwrites AtA, which isn't needed afterwards)
+    if (arm_mat_inverse_f32(&AtA_mat, &AtA_inv_mat) != ARM_MATH_SUCCESS) {
+        return false; // selected normals are coplanar
+    }
 
     float32_t Atb[3];
     arm_matrix_instance_f32 Atb_mat = {3, 1, Atb};
@@ -133,6 +141,10 @@ bool get_vec_from_photodiode_readings(float* photodiode_readings,
         estimated_sun_vector[1] * estimated_sun_vector[1] +
         estimated_sun_vector[2] * estimated_sun_vector[2]
     );
+
+    if (!(mag > 1e-6f) || !isfinite(mag)) {
+        return false;
+    }
 
     estimated_sun_vector[0] /= mag;
     estimated_sun_vector[1] /= mag;

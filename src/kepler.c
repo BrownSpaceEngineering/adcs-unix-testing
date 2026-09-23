@@ -28,6 +28,16 @@ void propogateOrbitalElements(float32_t semi_major_axis, float32_t eccentricity,
                               float32_t true_anomaly, float32_t time_delta, float32_t* output) {
     // Mass of earth is extremely larger than the satellite, so:
 
+    output[0] = semi_major_axis;
+    output[1] = eccentricity;
+    output[2] = inclination;
+    output[3] = ascending_node;
+    output[4] = periapsis;
+    output[5] = true_anomaly;
+    if (!(eccentricity >= 0.0f && eccentricity < 1.0f) || !(semi_major_axis > 0.0f)) {
+        return; // only closed (elliptical) orbits are supported
+    }
+
     // gravitational
     float32_t u = 3.986004418e14;              //[m^3/s^2]
     float32_t f = true_anomaly * M_PI / 180.0; //[radians]
@@ -48,17 +58,24 @@ void propogateOrbitalElements(float32_t semi_major_axis, float32_t eccentricity,
 
     // define mean motion
     float32_t n;
-    arm_sqrt_f32(u / pow(semi_major_axis, 3.0), &n);
+    arm_sqrt_f32(u / (semi_major_axis * semi_major_axis * semi_major_axis), &n);
 
     // Find mean anomaly at T + dt
     float32_t M_new = M + n * time_delta;
+    // Wrap to [-pi, pi) so long propagations don't lose float precision
+    M_new = fmodf(M_new + (float32_t)M_PI, 2.0f * (float32_t)M_PI);
+    if (M_new < 0.0f) {
+        M_new += 2.0f * (float32_t)M_PI;
+    }
+    M_new -= (float32_t)M_PI;
 
     // Use newton's method to iterate until we find the new_true_anomly.
-    float32_t E_current = M_new;
-    float32_t tolerance = 1e-12;
+    // Starting at pi instead of M converges reliably for high eccentricities.
+    float32_t E_current = (eccentricity < 0.8f) ? M_new : (float32_t)M_PI;
+    float32_t tolerance = 1e-7f; // 1e-12 is below float32 resolution
     int MAXIMUM_ITERATIONS = 10;
 
-    for (int i = 1; i < MAXIMUM_ITERATIONS; ++i) {
+    for (int i = 0; i < MAXIMUM_ITERATIONS; ++i) {
         // Calculate the derivative of kepler's equation
         float32_t E_change = ((E_current - eccentricity * arm_sin_f32(E_current) - M_new)
                               / (1 - eccentricity * arm_cos_f32(E_current)));
@@ -67,15 +84,9 @@ void propogateOrbitalElements(float32_t semi_major_axis, float32_t eccentricity,
         E_current = E_current - E_change;
 
         // if tolerance is small enough, break out of the loop
-        if (fabs(E_change) < tolerance)
+        if (fabsf(E_change) < tolerance)
             break;
     }
-    output[0] = semi_major_axis;
-    output[1] = eccentricity;
-    output[2] = inclination;
-    output[3] = ascending_node;
-    output[4] = periapsis;
-
     // updated true anomaly from our updated eccentric anomaly
     float32_t new_atan2;
     arm_atan2_f32(sqrt_1_plus_e * arm_sin_f32(E_current / 2),

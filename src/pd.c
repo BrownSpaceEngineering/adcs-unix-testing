@@ -1,33 +1,42 @@
 #include "include/pd.h"
-#include "Include/arm_math_types.h"
-#include "Include/dsp/basic_math_functions.h"
+#include "include/quat.h"
 #include "arm_math.h"
+
+const float32_t PD_INERTIA[9] = {3.0054115e-02f,  -5.1674000e-05f, 2.5075000e-05f,
+                                 -5.1674000e-05f, 1.1430611e-02f,  -3.6481690e-03f,
+                                 2.5075000e-05f,  -3.6481690e-03f, 2.3052295e-02f};
+
 /**
  * \fn pd_loop
- * 
- * \brief A simple PD control loop for attitude control.
- * 
- * From the error (r_e) in axis-angle form, the angular velocity (r_omega) in axis-angle form, returns the torque wanted 
- * 
- * \param[in] r_e The attitude error in axis-angle form (r_e[0], r_e[1], r_e[2]) is the rotation vector, and r_e[3] is the angle of rotation in radians. 
- * \param[in] r_omega The angular velocity error in axis-angle form (r_omega[0], r_omega[1], r_omega[2]) is the angular velocity vector, and r_omega[3] is the magnitude of the angular velocity in radians per second.
- * \param[out] tau The output torque vector to apply to the satellite in order to correct the attitude error and angular velocity error.
+ *
+ * \brief PD attitude controller, port of PD_loop.m.
+ *
+ * The previous version read r_e[3] / r_omega[3] past the end of 3-element arrays and used
+ * those garbage values as gains.
+ *
+ * \param[in] q_error Body-frame error quaternion (rotation from current to desired attitude)
+ * \param[in] omega Body angular rate (rad/s)
+ * \param[out] tau Commanded torque (N m, body frame)
  */
-void pd_loop(float32_t *r_e, float32_t *r_omega, float32_t *tau) {
+void pd_loop(const float32_t* q_error, const float32_t* omega, float32_t* tau) {
+    // quat2rotationvec already takes the shortest rotation (flips q if w < 0), which gives
+    // theta * axis = r_e(4) * r_e(1:3) from the MATLAB code
+    float32_t r_e[3];
+    quat2rotationvec(q_error, r_e);
 
-    float32_t placeholder = 1.0;
-    float32_t placeholder_kp = placeholder * r_e[3]; 
-    float32_t placeholder_kd = placeholder * r_omega[3]; 
-    //TODO: find these constants
-    float32_t Kp[3] = {-placeholder_kp, -placeholder_kp, -placeholder_kp};
-    float32_t Kd[3] = {-placeholder_kd, -placeholder_kd, -placeholder_kd};
-
-    float32_t p[3]; 
-    float32_t d[3];
-
-    arm_mult_f32(Kp, r_e, p, 3); 
-    arm_mult_f32(Kd, r_omega, d, 3);
-
-    arm_add_f32(p, d, tau, 3);
-
+    float32_t t[3];
+    for (int i = 0; i < 3; i++) {
+        // omega_mag * omega_axis == omega
+        t[i] = PD_KP * r_e[i] - PD_KD * omega[i];
+    }
+    for (int i = 0; i < 3; i++) {
+        float32_t v = PD_INERTIA[i * 3 + 0] * t[0] + PD_INERTIA[i * 3 + 1] * t[1]
+                      + PD_INERTIA[i * 3 + 2] * t[2];
+        if (v > PD_MAX_TAU) {
+            v = PD_MAX_TAU;
+        } else if (v < -PD_MAX_TAU) {
+            v = -PD_MAX_TAU;
+        }
+        tau[i] = v;
+    }
 }

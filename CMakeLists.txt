@@ -18,7 +18,11 @@ list(FILTER SRC EXCLUDE REGEX "/Source/[^/]+/arm_[^/]*\\.c$")
 # not standalone translation units, and fail to compile on their own
 list(FILTER SRC EXCLUDE REGEX "/_[^/]*\\.c$")
 # manual specified sources:
-list(APPEND SRC src/main.c src/test.c src/quat.c src/laextension.c src/bdot.c src/body.c src/down_quat.c src/ecef2eci.c src/iterate.c src/kepler.c src/laextension.c src/magnetosphere.c src/moments2currents.c src/orbital2eci.c src/pd.c src/photodiode_determination.c src/quest.c src/sunvec.c src/torque2moments.c)
+set(ADCS_SRC src/main.c src/test.c src/quat.c src/laextension.c src/bdot.c src/body.c src/down_quat.c src/ecef2eci.c src/filters.c src/iterate.c src/kepler.c src/magnetosphere.c src/moments2currents.c src/orbital2eci.c src/pd.c src/photodiode_determination.c src/quest.c src/sunvec.c src/torque2moments.c)
+list(APPEND SRC ${ADCS_SRC})
+# extra warnings on our own code only (CMSIS is noisy). -Wshadow / -Wfloat-equal match the PVDX
+# firmware build, which compiles with -Werror.
+set_source_files_properties(${ADCS_SRC} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wshadow;-Wfloat-equal")
 set(CMAKE_C_FLAGS_DEBUG "-Wall -Wextra -Wpedantic -g" CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 

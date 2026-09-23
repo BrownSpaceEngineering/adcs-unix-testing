@@ -1,38 +1,36 @@
 #include "include/sunvec.h"
 #include <math.h>
-#include <string.h>
 
 #ifndef M_PI
-#define M_PI 3.141592653589
+#define M_PI 3.14159265358979323846
 #endif
 
-float sind(float in) { return sin(in * M_PI / 180.0); }
-float cosd(float in) { return cos(in * M_PI / 180.0); }
-void sun_vec(int unix, float* sun) {
-    float julianDate = (float)unix / 86400 + 2440587.5;
-    float julianOffset = julianDate - 2451545.0;
-    float julianC = julianOffset / 36525;
+static double sind(double in) { return sin(in * M_PI / 180.0); }
+static double cosd(double in) { return cos(in * M_PI / 180.0); }
 
-    float meanAnomaly = 357.529 + 35999.050 * julianC;
-    float meanLongitude = 280.459 + 36000.770 * julianC;
+/*
+ * Port of sunVectorECI.m. Time arithmetic is in double: a float32 Julian date only resolves
+ * 0.25 days (~0.25 deg of solar longitude).
+ */
+void sun_vec(int unix_time, float* sun) {
+    double julianOffset = (double)unix_time / 86400.0 + 2440587.5 - 2451545.0;
+    double julianC = julianOffset / 36525.0;
 
-    meanAnomaly = fmod(meanAnomaly, 360);
-    meanLongitude = fmod(meanLongitude, 360);
+    double meanAnomaly = fmod(357.529 + 35999.050 * julianC, 360.0);
+    double meanLongitude = fmod(280.459 + 36000.770 * julianC, 360.0);
 
-    float sunCenter
-        = (1.914602 - 0.004817 * julianC - 0.000014 * julianC * julianC) * sind(meanAnomaly)
-          + (0.019993 - 0.000101 * julianC) * sind(2 * meanAnomaly)
-          + 0.000289 * sind(3 * meanAnomaly);
+    double sunCenter = (1.914602 - 0.004817 * julianC - 0.000014 * julianC * julianC) * sind(meanAnomaly)
+                       + (0.019993 - 0.000101 * julianC) * sind(2 * meanAnomaly)
+                       + 0.000289 * sind(3 * meanAnomaly);
 
-    float eclipticLongitude = meanLongitude + sunCenter;
-    eclipticLongitude = fmod(eclipticLongitude, 360);
+    double eclipticLongitude = fmod(meanLongitude + sunCenter, 360.0);
 
-    float obliquityEcliptic = 23 + 26.0f / 60.0f + 21.448f / 3600
-                              - (46.8150f * julianC + 0.00059 * julianC * julianC
-                                 - 0.001813 * julianC * julianC * julianC)
-                                    / 3600;
+    double obliquityEcliptic = 23 + 26.0 / 60.0 + 21.448 / 3600
+                               - (46.8150 * julianC + 0.00059 * julianC * julianC
+                                  - 0.001813 * julianC * julianC * julianC)
+                                     / 3600;
 
-    float ans[3] = {cosd(eclipticLongitude), cosd(obliquityEcliptic) * sind(eclipticLongitude),
-                    sind(obliquityEcliptic) * sind(eclipticLongitude)};
-    memcpy(sun, ans, 3 * sizeof(float));
+    sun[0] = (float)cosd(eclipticLongitude);
+    sun[1] = (float)(cosd(obliquityEcliptic) * sind(eclipticLongitude));
+    sun[2] = (float)(sind(obliquityEcliptic) * sind(eclipticLongitude));
 }

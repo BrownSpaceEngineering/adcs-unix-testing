@@ -1,3 +1,4 @@
+#include "include/moments2currents.h"
 #include <math.h>
 #include "arm_math.h"
 
@@ -7,10 +8,10 @@
  *
  * Inputs:
  *  \param[in] m       : 3-element array, magnetic moment [mx, my, mz] [A·m2]
- *  \param[in] Imax    : 3-element array of current limits [A] (use -1 at an axis if no current limit on that axis)
+ *  \param[in] Imax    : 3-element array of current limits [A] (use a negative value, e.g. -1, for no limit on that axis)
  *  \param[out] I_out   : 3-element output array for coil currents [Ix, Iy, Iz] [A]
  */
-void moment2current3axis(float32_t *m, float32_t *Imax, float32_t *I_out) {
+void moment2current3axis(const float32_t *m, const float32_t *Imax, float32_t *I_out) {
 
     /* Hard-coded parameters (to be measured/calculated)
      *   n    : turns per coil
@@ -47,7 +48,7 @@ void moment2current3axis(float32_t *m, float32_t *Imax, float32_t *I_out) {
 
     /* Saturation clamp (only applied when Imax is provided) */
     for (int i = 0; i < 3; i++) {
-        if(Imax[i] == -1){
+        if (Imax[i] < 0.0f) { // no limit (avoids == on floats, which -Wfloat-equal rejects)
             continue;
         }
         else if (I_out[i] >  Imax[i]) {

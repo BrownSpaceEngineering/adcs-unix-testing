@@ -365,16 +365,18 @@ void ecef_to_geodetic(const float32_t r_ecef[3],
     alt = 0.0f;
 
 
+    /* sinf/cosf rather than arm_sin_f32/arm_cos_f32 here: the CMSIS versions are table
+     * interpolations with ~2e-5 absolute error, which is ~130 m of altitude at |r| = 7e6 m. */
     for (int32_t iter = 0; iter < 10; ++iter) {
-        sin_t = arm_sin_f32(theta);
-        cos_t = arm_cos_f32(theta);
+        sin_t = sinf(theta);
+        cos_t = cosf(theta);
 
         num = z + ep2 * b * sin_t * sin_t * sin_t;
         den = p - e2  * a * cos_t * cos_t * cos_t;
         arm_atan2_f32(num, den, &lat);
 
-        sin_lat = arm_sin_f32(lat);
-        cos_lat = arm_cos_f32(lat);
+        sin_lat = sinf(lat);
+        cos_lat = cosf(lat);
         arm_sqrt_f32(1.0f - e2 * sin_lat * sin_lat, &N);
         N = a / N; 
 
@@ -532,14 +534,22 @@ void synthesize_mag_field(float32_t lat_rad, float32_t lon_rad, float32_t alt_m,
         }
     }
 
-    /* ---- Geocentric (r, theta, phi) -> geodetic NED ---- */
-    B_X_geo = -Bt;
+    /* ---- Geocentric (r, theta, phi) -> geodetic NED ----
+     * Bt accumulates (1/r) dV/dtheta, which IS the geocentric north component X' (theta is
+     * colatitude, so d/dtheta = -d/dlat), and Br = -dV/dr is the outward component, so the
+     * geocentric down component is Z' = -Br. Rotating by psi = geodetic - geocentric latitude:
+     *   B_N =  X' cos(psi) + Z' sin(psi)
+     *   B_D = -X' sin(psi) + Z' cos(psi)
+     * magnetosphere.m (and the previous C port) had B_N = X' cos(psi) - Z' sin(psi), a
+     * ~0.3 deg direction error at mid-latitudes (zero at the equator and poles, where psi = 0).
+     * Checked against -grad(V) evaluated directly in ECEF (tools/reference_values.py). */
+    B_X_geo = Bt;
     B_Z_geo = -Br;
 
-    cos_psi = arm_cos_f32(psi);
-    sin_psi = arm_sin_f32(psi);
+    cos_psi = cosf(psi);
+    sin_psi = sinf(psi);
 
-    *B_N = -(B_X_geo * cos_psi + B_Z_geo * sin_psi);
+    *B_N =  B_X_geo * cos_psi + B_Z_geo * sin_psi;
     *B_E =  Bphi;
-    *B_D =  (B_X_geo * sin_psi + B_Z_geo * cos_psi);
+    *B_D = -B_X_geo * sin_psi + B_Z_geo * cos_psi;
 }

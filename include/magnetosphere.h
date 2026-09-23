@@ -1,3 +1,5 @@
+#ifndef MAGNETOSPHERE_H
+#define MAGNETOSPHERE_H
 #define WMM_NMAX        12
 #define WMM_DIM        (WMM_NMAX + 2)
 #define WMM_EPOCH       2025.0f     /* WMM2025 reference epoch              */
@@ -24,3 +26,4 @@ void  load_wmm2025(float64_t JD,
 void wmm_eci_embedded_v2(const float32_t r_ECI[3],
                         int32_t JD_int, float32_t JD_frac,
                         float32_t B_ECI[3]);
+#endif
