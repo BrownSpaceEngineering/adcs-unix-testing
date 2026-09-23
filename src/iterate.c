@@ -87,22 +87,36 @@ static arm_status normalize_vector3(const float32_t *source, float32_t *unit) {
     return all_finite(unit, 3) ? ARM_MATH_SUCCESS : ARM_MATH_NANINF;
 }
 
-/*
- * Prepare a covariance for Cholesky decomposition:
- *
- *   P_sym = (P + P^T) / 2
- *   jitter_0 = max(epsilon, 8 FLT_EPSILON max(|diag(P_sym)|))
- *   P_try = P_sym                            on the first attempt
- *   P_try <- P_try + jitter I                after a failed attempt
- *   jitter <- 10 jitter                      after each addition
- *
- * Success means that P_try = L L^T. Exhausting the bounded attempts reports
- * an indefinite covariance instead of applying an unbounded repair.
- */
-static arm_status ensure_positive_definite(float32_t *matrix) {
+/* Attempt P = L L^T without modifying P. */
+static arm_status try_cholesky(const float32_t *matrix, float32_t *lower) {
     if (!all_finite(matrix, STATE_SIZE * STATE_SIZE)) return ARM_MATH_NANINF;
 
-    /* P_sym = (P + P^T) / 2. */
+    float32_t input_data[STATE_SIZE * STATE_SIZE];
+    memcpy(input_data, matrix, sizeof(input_data));
+    memset(lower, 0, STATE_SIZE * STATE_SIZE * sizeof(float32_t));
+    arm_matrix_instance_f32 input = {STATE_SIZE, STATE_SIZE, input_data};
+    arm_matrix_instance_f32 factor = {STATE_SIZE, STATE_SIZE, lower};
+    arm_status status = arm_mat_cholesky_f32(&input, &factor);
+    if (status != ARM_MATH_SUCCESS) return status;
+    return all_finite(lower, STATE_SIZE * STATE_SIZE)
+           ? ARM_MATH_SUCCESS : ARM_MATH_NANINF;
+}
+
+/*
+ * First try P = L L^T exactly as supplied. Only after that fails, repair P:
+ *
+ *   P <- (P + P^T) / 2
+ *   jitter_0 = max(epsilon, 8 FLT_EPSILON max(|diag(P)|))
+ *   P <- P + jitter I
+ *   jitter <- 10 jitter after each failed jittered attempt
+ *
+ * Exhausting the five bounded jitter attempts reports an indefinite covariance.
+ */
+static arm_status cholesky_with_repair(float32_t *matrix, float32_t *lower) {
+    arm_status status = try_cholesky(matrix, lower);
+    if (status == ARM_MATH_SUCCESS || status == ARM_MATH_NANINF) return status;
+
+    /* The direct Cholesky failed, so now repair P <- (P + P^T) / 2. */
     for (int r = 0; r < STATE_SIZE; ++r) {
         for (int c = r + 1; c < STATE_SIZE; ++c) {
             float32_t average = 0.5f * (matrix[r * STATE_SIZE + c]
@@ -110,25 +124,22 @@ static arm_status ensure_positive_definite(float32_t *matrix) {
             matrix[r * STATE_SIZE + c] = matrix[c * STATE_SIZE + r] = average;
         }
     }
-    if (!all_finite(matrix, STATE_SIZE * STATE_SIZE)) return ARM_MATH_NANINF;
-    /*
-     * Try P_try <- P_try + jitter I until P_try = L L^T exists. If the bounded
-     * retries cannot repair P, report the decomposition failure.
-     */
+    status = try_cholesky(matrix, lower);
+    if (status == ARM_MATH_SUCCESS || status == ARM_MATH_NANINF) return status;
+
     float32_t scale = 0.0f;
     for (int r = 0; r < STATE_SIZE; ++r) {
-        if (fabsf(matrix[r * STATE_SIZE + r]) > scale)
+        if (fabsf(matrix[r * STATE_SIZE + r]) > scale) {
             scale = fabsf(matrix[r * STATE_SIZE + r]);
+        }
     }
     float32_t jitter = fmaxf(COV_EPSILON, 8.0f * FLT_EPSILON * scale);
-    for (int attempt = 0; attempt < 6; ++attempt) {
-        float32_t input_data[STATE_SIZE * STATE_SIZE], lower[STATE_SIZE * STATE_SIZE] = {0};
-        memcpy(input_data, matrix, sizeof(input_data));
-        arm_matrix_instance_f32 input = {STATE_SIZE, STATE_SIZE, input_data};
-        arm_matrix_instance_f32 factor = {STATE_SIZE, STATE_SIZE, lower};
-        if (arm_mat_cholesky_f32(&input, &factor) == ARM_MATH_SUCCESS
-            && all_finite(lower, STATE_SIZE * STATE_SIZE)) return ARM_MATH_SUCCESS;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        /* P <- P + jitter I. */
         for (int r = 0; r < STATE_SIZE; ++r) matrix[r * STATE_SIZE + r] += jitter;
+
+        status = try_cholesky(matrix, lower);
+        if (status == ARM_MATH_SUCCESS || status == ARM_MATH_NANINF) return status;
         jitter *= 10.0f;
     }
     return ARM_MATH_DECOMPOSITION_FAILURE;
@@ -162,11 +173,13 @@ static void sigma_weights(float32_t *mean_weights, float32_t *cov_weights) {
 /*
  * Generate Euclidean sigma points from state x and covariance P:
  *
- *   P_sym     = (P + P^T) / 2
- *   L L^T    = (n + lambda) P_sym
+ *   P_scaled  = (n + lambda) P
+ *   L L^T     = P_scaled
  *   X[0]     = x
  *   X[k+1]   = x + L[:, k]
  *   X[k+1+n] = x - L[:, k],  k = 0 ... n-1
+ *
+ * P_scaled is repaired only if its first Cholesky attempt fails.
  */
 static arm_status sigma_points(const float32_t *state, const float32_t *covariance,
                                float32_t *sigmas) {
@@ -174,24 +187,13 @@ static arm_status sigma_points(const float32_t *state, const float32_t *covarian
     float32_t lower[STATE_SIZE * STATE_SIZE] = {0};
     memcpy(scaled, covariance, sizeof(scaled));
 
-    /* scaled = P_sym = (P + P^T) / 2. */
-    for (int r = 0; r < STATE_SIZE; ++r) {
-        for (int c = r + 1; c < STATE_SIZE; ++c) {
-            float32_t average = 0.5f * (scaled[r * STATE_SIZE + c]
-                                    + scaled[c * STATE_SIZE + r]);
-            scaled[r * STATE_SIZE + c] = scaled[c * STATE_SIZE + r] = average;
-        }
-    }
-    /* scaled = (n + lambda) P_sym. */
+    /* P_scaled = (n + lambda) P. */
     const float32_t lambda = sigma_lambda();
     for (int i = 0; i < STATE_SIZE * STATE_SIZE; ++i) scaled[i] *= STATE_SIZE + lambda;
 
-    /* L L^T = scaled = (n + lambda) P_sym. */
-    arm_matrix_instance_f32 input = {STATE_SIZE, STATE_SIZE, scaled};
-    arm_matrix_instance_f32 factor = {STATE_SIZE, STATE_SIZE, lower};
-    arm_status status = arm_mat_cholesky_f32(&input, &factor);
+    /* Try P_scaled = L L^T directly; repair P_scaled only if this fails. */
+    arm_status status = cholesky_with_repair(scaled, lower);
     if (status != ARM_MATH_SUCCESS) return status;
-    if (!all_finite(lower, STATE_SIZE * STATE_SIZE)) return ARM_MATH_NANINF;
 
     /* X[0] = x. */
     memcpy(sigmas, state, sizeof(float32_t) * STATE_SIZE);
@@ -559,7 +561,7 @@ static arm_status correct_with_measurements(const float32_t *propagated_sigmas,
  *   Wm[0]  = lambda / (n + lambda)
  *   Wc[0]  = Wm[0] + (1 - alpha^2 + beta)
  *   Wm[i]  = Wc[i] = 1 / (2 (n + lambda)),  i = 1 ... 2n
- *   L L^T  = (n + lambda) P_guarded
+ *   L L^T  = (n + lambda) P_k
  *   X[0,:] = x_k
  *   X[j+1,:]   = x_k + L[:, j]
  *   X[j+1+n,:] = x_k - L[:, j],  j = 0 ... n-1
@@ -667,18 +669,10 @@ arm_status iterate(const float32_t *error_state, const float32_t *attitude_quate
     }
 
     /*
-     * Step 1a: Basic degenerate eigenvalue numerical guard
-     */
-    float32_t guarded_covariance[STATE_SIZE * STATE_SIZE];
-    memcpy(guarded_covariance, covariance, sizeof(guarded_covariance));
-    arm_status status = ensure_positive_definite(guarded_covariance);
-    if (status != ARM_MATH_SUCCESS) return status;
-
-    /*
-     * Step 1b: Generate error sigma points
+     * Step 1: Generate error sigma points.
      */
     float32_t error_sigma_points[NUM_SIGMAS * STATE_SIZE];
-    status = sigma_points(error_state, guarded_covariance, error_sigma_points);
+    arm_status status = sigma_points(error_state, covariance, error_sigma_points);
     if (status != ARM_MATH_SUCCESS) return status;
 
     float32_t quaternion_sigma_points[NUM_SIGMAS * QUAT_SIGMA_SIZE];
@@ -746,10 +740,6 @@ arm_status iterate(const float32_t *error_state, const float32_t *attitude_quate
         if (status != ARM_MATH_SUCCESS) return status;
     }
     if (!all_finite(corrected_state, STATE_SIZE)) return ARM_MATH_NANINF;
-
-    /* Reguard the outgoing predicted covariance */
-    status = ensure_positive_definite(predicted_covariance);
-    if (status != ARM_MATH_SUCCESS) return status;
     float32_t correction[4], result_quaternion[4];
 
     /* Step 5a: Turn the correction error vector into a quaternion */

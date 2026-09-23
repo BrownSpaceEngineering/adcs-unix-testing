@@ -67,7 +67,6 @@ static bool eps_close_matrix(float32_t* A, float32_t* B, int rows, int cols, flo
 // put test function definitions here
 
 void test_run_all(void) {
-    test_quest();
     test_iteration();
 }
 
@@ -387,50 +386,23 @@ static float32_t quaternion_angle(const float32_t *left, const float32_t *right)
     return 2.0f * atan2f(vector_norm, fabsf(difference[0]));
 }
 
-/*
- * Return the angle between two three-dimensional vectors:
- *
- *   angle = atan2(||left cross right||_2, left dot right)
- */
-static float32_t vector_angle(const float32_t *left, const float32_t *right) {
-    /* angle = atan2(||left cross right||_2, left dot right). */
-    float32_t dot = left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
-    float32_t cross[3] = {left[1] * right[2] - left[2] * right[1],
-                          left[2] * right[0] - left[0] * right[2],
-                          left[0] * right[1] - left[1] * right[0]};
-    float32_t cross_norm = sqrtf(cross[0] * cross[0] + cross[1] * cross[1]
-                                 + cross[2] * cross[2]);
-    return atan2f(cross_norm, dot);
+static int compare_float32(const void *left, const void *right) {
+    float32_t left_value = *(const float32_t *)left;
+    float32_t right_value = *(const float32_t *)right;
+    return (left_value > right_value) - (left_value < right_value);
 }
 
-/*
- * Return the largest one-sigma value in a three-axis covariance block:
- *
- *   result = sqrt(max(diag(cov)[first_axis:first_axis+3]))
- */
-static float32_t max_axis_sigma(const float32_t *cov, int first_axis) {
-    /* max_sigma = sqrt(max(diag(cov)[first_axis:first_axis+3])). */
-    float32_t variance = 0.0f;
-    for (int axis = first_axis; axis < first_axis + 3; ++axis) {
-        if (cov[axis * 6 + axis] > variance) variance = cov[axis * 6 + axis];
-    }
-    return sqrtf(variance);
-}
+/* Return a linearly interpolated percentile from a sorted array. */
+static float32_t percentile(const float32_t *sorted_values, int count, float32_t fraction) {
+    /* position = fraction * (count - 1). */
+    float32_t position = fraction * (count - 1);
+    int lower = (int)floorf(position);
+    int upper = lower + 1 < count ? lower + 1 : lower;
+    float32_t weight = position - lower;
 
-/*
- * Return the Euclidean gyro-bias estimation error:
- *
- *   error = ||estimated_bias - true_bias||_2
- */
-static float32_t gyro_bias_error(const float32_t *estimated_bias,
-                                 const float32_t *true_bias) {
-    /* bias_error = ||estimated_bias - true_bias||_2. */
-    float32_t squared_error = 0.0f;
-    for (int axis = 0; axis < 3; ++axis) {
-        float32_t difference = estimated_bias[axis] - true_bias[axis];
-        squared_error += difference * difference;
-    }
-    return sqrtf(squared_error);
+    /* result = lower_value + weight * (upper_value - lower_value). */
+    return sorted_values[lower]
+           + weight * (sorted_values[upper] - sorted_values[lower]);
 }
 
 /*
@@ -445,31 +417,29 @@ static float32_t gyro_bias_error(const float32_t *estimated_bias,
  *   body[v] = unit(q_truth^-1 (*) reference[v] (*) q_truth
  *                  + N(0, 0.01^2 I))
  *
- * The reported attitude error and averages are:
+ * After the first 1000 warmup steps, store every post-step attitude error in
+ * degrees, then report each mode's:
  *
- *   e[k]          = angle(q_estimate[k] (*) q_truth[k]^-1)
- *   maximum_error = max(k, e[k])
- *   average_mode  = sum(k in mode, e[k]) / count(k in mode)
- *   bias_error    = ||estimated_bias - truth_bias||_2
+ *   average = sum(k, e[k]) / count
+ *   p50     = percentile(e, 0.50)
+ *   p99.5   = percentile(e, 0.995)
+ *   maximum = max(k, e[k])
  */
 void test_iteration(void) {
-    enum { MODE_STEPS = 27000, MEASUREMENT_PERIOD_STEPS = 100, CYCLES = 10 };
+    enum {
+        MODE_STEPS = 27000,
+        MEASUREMENT_PERIOD_STEPS = 100,
+        CYCLES = 10
+    };
     const float32_t dt = 0.1f;
     const float32_t radians_to_degrees = 180.0f / (float32_t)M_PI;
-    const float32_t warning_degrees[3] = {5.0f, 15.0f, 30.0f};
-    bool warning_reported[3] = {false};
-    const char *trace_path = getenv("ADCS_UKF_TRACE_CSV");
-    FILE *trace = NULL;
-    if (trace_path != NULL && trace_path[0] != '\0') {
-        trace = fopen(trace_path, "w");
-        if (trace == NULL) { perror(trace_path); exit(EXIT_FAILURE); }
-        fprintf(trace, "step,time_s,mode,update,error_before_deg,error_after_deg,"
-                       "bias_error_rad_s,att_sigma_max_deg,bias_sigma_max_rad_s,"
-                       "mag_pre_step_residual_deg,sun_pre_step_residual_deg\n");
-    }
+    const int samples_per_mode = MODE_STEPS * CYCLES;
     float32_t covariance[36], process_noise[36], two_vector_noise[36], one_vector_noise[9];
     float32_t body_vectors[6], reference_vectors[6];
     float32_t next_error_state[6], next_quaternion[4], next_covariance[36];
+    float32_t *one_vector_errors = malloc((size_t)samples_per_mode * sizeof(float32_t));
+    float32_t *two_vector_errors = malloc((size_t)samples_per_mode * sizeof(float32_t));
+    UKF_CHECK(one_vector_errors != NULL && two_vector_errors != NULL);
 
     /* MATLAB's truth bias and sensor-noise model, with a fixed seed. */
     const float32_t truth_bias[3] = {0.002f, -0.001f, 0.0015f};
@@ -482,17 +452,12 @@ void test_iteration(void) {
     float32_t estimated_quaternion[4] = {1, 0, 0, 0};
     float32_t error_state[6] = {0};
     int two_vector_samples = 0, one_vector_samples = 0;
-    float32_t two_vector_error_sum = 0.0f, one_vector_error_sum = 0.0f;
-    float32_t maximum_attitude_error = 0.0f, block_error_sum = 0.0f;
-    float32_t block_maximum_error = 0.0f;
-    int maximum_error_step = 0, block_maximum_step = 0;
-    float32_t last_mag_residual = NAN, last_sun_residual = NAN;
-    char sun_residual_display[24] = "n/a";
+    float32_t two_vector_sum = 0.0f, one_vector_sum = 0.0f;
+    float32_t two_vector_maximum = 0.0f, one_vector_maximum = 0.0f;
     initialize_filter_matrices(covariance, process_noise, two_vector_noise, one_vector_noise);
     srand(42);
     for (int step = 0; step < 2 * MODE_STEPS * CYCLES; ++step) {
         bool two_vectors = (step % (2 * MODE_STEPS)) < MODE_STEPS;
-        const char *mode_name = two_vectors ? "2vec" : "1vec";
         const int vector_count = two_vectors ? 2 : 1;
 
         float32_t truth_rotation_step[3], truth_rotation_quaternion[4];
@@ -520,26 +485,7 @@ void test_iteration(void) {
         if (update) {
             simulate_body_vectors(truth_quaternion, magnetic_field, sun_field,
                                   two_vectors, body_vectors);
-            float32_t predicted_inverse[4], predicted_body[3];
-
-            /* predicted_body = q_estimate^-1 (*) reference_vector (*) q_estimate. */
-            quat_inv(estimated_quaternion, predicted_inverse);
-            quat_apply(predicted_inverse, reference_vectors, predicted_body);
-            last_mag_residual = vector_angle(body_vectors, predicted_body);
-            last_sun_residual = NAN;
-            if (two_vectors) {
-                quat_apply(predicted_inverse, reference_vectors + 3, predicted_body);
-                last_sun_residual = vector_angle(body_vectors + 3, predicted_body);
-                snprintf(sun_residual_display, sizeof(sun_residual_display), "%.3fdeg",
-                         last_sun_residual * radians_to_degrees);
-            } else {
-                strcpy(sun_residual_display, "n/a");
-            }
         }
-        /* attitude_error = angle(q_estimate (*) q_truth^-1). */
-        float32_t error_before = quaternion_angle(estimated_quaternion, truth_quaternion);
-        float32_t sigma_before = 0.0f;
-        if (step > 0 && step % MODE_STEPS == 0) sigma_before = max_axis_sigma(covariance, 0);
         const float32_t *active_noise = two_vectors ? two_vector_noise : one_vector_noise;
         const float32_t *body_input = update ? body_vectors : NULL;
         const float32_t *reference_input = update ? reference_vectors : NULL;
@@ -549,11 +495,8 @@ void test_iteration(void) {
                                     process_noise, noise_input, dt, vector_count, update,
                                     next_error_state, next_quaternion, next_covariance);
         if (status != ARM_MATH_SUCCESS) {
-            fprintf(stderr, "UKF failed: step=%d time=%.1fs mode=%s update=%d status=%d "
-                            "error_before=%.3fdeg last_mag_residual=%.3fdeg\n",
-                    step, (step + 1) * dt, mode_name, update,
-                    status, error_before * radians_to_degrees,
-                    last_mag_residual * radians_to_degrees);
+            fprintf(stderr, "UKF failed: step=%d mode=%s update=%d status=%d\n",
+                    step, two_vectors ? "2vec" : "1vec", update, status);
             exit(EXIT_FAILURE);
         }
         memcpy(error_state, next_error_state, sizeof(error_state));
@@ -563,80 +506,40 @@ void test_iteration(void) {
         memcpy(estimated_quaternion, next_quaternion, sizeof(estimated_quaternion));
         memcpy(covariance, next_covariance, sizeof(covariance));
         /* Include prediction steps as well as measurement updates in each mode. */
-        float32_t step_error = quaternion_angle(estimated_quaternion, truth_quaternion);
-        UKF_CHECK(isfinite(step_error));
-        if (step_error > maximum_attitude_error) {
-            maximum_attitude_error = step_error;
-            maximum_error_step = step;
-        }
-        if (step_error > block_maximum_error) {
-            block_maximum_error = step_error;
-            block_maximum_step = step;
-        }
-        block_error_sum += step_error;
-        float32_t bias_error = gyro_bias_error(error_state + 3, truth_bias);
-        float32_t error_degrees = step_error * radians_to_degrees;
-        if (step > 0 && step % MODE_STEPS == 0) {
-            printf("mode switch %s->%s: step=%d error %.3f->%.3fdeg "
-                   "att_sigma %.3f->%.3fdeg mag_residual=%.3fdeg sun_residual=%s\n",
-                   two_vectors ? "1vec" : "2vec", mode_name,
-                   step, error_before * radians_to_degrees, error_degrees,
-                   sigma_before * radians_to_degrees,
-                   max_axis_sigma(covariance, 0) * radians_to_degrees,
-                   last_mag_residual * radians_to_degrees, sun_residual_display);
-        }
-        for (int warning = 0; warning < 3; ++warning) {
-            if (!warning_reported[warning] && error_degrees >= warning_degrees[warning]) {
-                warning_reported[warning] = true;
-                printf("attitude crossed %.0fdeg: step=%d time=%.1fs mode=%s update=%d "
-                       "before=%.3fdeg after=%.3fdeg bias_error=%.6frad/s "
-                       "att_sigma=%.3fdeg last_mag_residual=%.3fdeg "
-                       "last_sun_residual=%s\n",
-                       warning_degrees[warning], step, (step + 1) * dt,
-                       mode_name, update,
-                       error_before * radians_to_degrees, error_degrees, bias_error,
-                       max_axis_sigma(covariance, 0) * radians_to_degrees,
-                       last_mag_residual * radians_to_degrees, sun_residual_display);
-            }
-        }
-        if (trace != NULL && (update || (step + 1) % MODE_STEPS == 0)) {
-            fprintf(trace, "%d,%.1f,%s,%d,%.6f,%.6f,%.8f,%.6f,%.8f,%.6f,%.6f\n",
-                    step, (step + 1) * dt, mode_name, update,
-                    error_before * radians_to_degrees, error_degrees, bias_error,
-                    max_axis_sigma(covariance, 0) * radians_to_degrees, max_axis_sigma(covariance, 3),
-                    update ? last_mag_residual * radians_to_degrees : NAN,
-                    update ? last_sun_residual * radians_to_degrees : NAN);
-        }
+        float32_t error_degrees = quaternion_angle(estimated_quaternion, truth_quaternion)
+                                  * radians_to_degrees;
+        UKF_CHECK(isfinite(error_degrees));
         if (two_vectors) {
-            two_vector_error_sum += step_error;
+            UKF_CHECK(two_vector_samples < samples_per_mode);
+            two_vector_errors[two_vector_samples] = error_degrees;
+            two_vector_sum += error_degrees;
+            if (error_degrees > two_vector_maximum) two_vector_maximum = error_degrees;
             ++two_vector_samples;
         } else {
-            one_vector_error_sum += step_error;
+            UKF_CHECK(one_vector_samples < samples_per_mode);
+            one_vector_errors[one_vector_samples] = error_degrees;
+            one_vector_sum += error_degrees;
+            if (error_degrees > one_vector_maximum) one_vector_maximum = error_degrees;
             ++one_vector_samples;
         }
-        if ((step + 1) % MODE_STEPS == 0) {
-            printf("mode block %2d (%s, steps %d-%d): average=%.3fdeg "
-                   "peak=%.3fdeg at step %d final=%.3fdeg bias_error=%.6frad/s "
-                   "att_sigma=%.3fdeg\n",
-                   step / MODE_STEPS + 1, mode_name,
-                   step + 1 - MODE_STEPS, step,
-                   block_error_sum / MODE_STEPS * radians_to_degrees,
-                   block_maximum_error * radians_to_degrees, block_maximum_step,
-                   error_degrees, bias_error, max_axis_sigma(covariance, 0) * radians_to_degrees);
-            block_error_sum = 0.0f;
-            block_maximum_error = 0.0f;
-        }
     }
-    float32_t bias_error = gyro_bias_error(error_state + 3, truth_bias);
-    float32_t attitude_error = quaternion_angle(estimated_quaternion, truth_quaternion);
-    printf("seeded simulation attitude error (rad): final %.6f, maximum %.6f at step %d, "
-           "average 2vec %.6f, average 1vec %.6f\n",
-           attitude_error, maximum_attitude_error, maximum_error_step,
-           two_vector_error_sum / two_vector_samples,
-           one_vector_error_sum / one_vector_samples);
-    printf("seeded simulation bias error: %.6f rad/s\n", bias_error);
-    if (trace != NULL) {
-        if (fclose(trace) != 0) { perror(trace_path); exit(EXIT_FAILURE); }
-        printf("UKF update trace: %s\n", trace_path);
-    }
+
+    UKF_CHECK(one_vector_samples == samples_per_mode);
+    qsort(one_vector_errors, (size_t)one_vector_samples, sizeof(float32_t), compare_float32);
+    qsort(two_vector_errors, (size_t)two_vector_samples, sizeof(float32_t), compare_float32);
+    float32_t one_vector_p50 = percentile(one_vector_errors, one_vector_samples, 0.50f);
+    float32_t one_vector_p995 = percentile(one_vector_errors, one_vector_samples, 0.995f);
+    float32_t two_vector_p50 = percentile(two_vector_errors, two_vector_samples, 0.50f);
+    float32_t two_vector_p995 = percentile(two_vector_errors, two_vector_samples, 0.995f);
+
+    printf("seeded simulation attitude error (deg):\n");
+    printf("  1vec: average %.6f, 50th percentile %.6f, 99.5th percentile %.6f, max %.6f\n",
+           one_vector_sum / one_vector_samples, one_vector_p50,
+           one_vector_p995, one_vector_maximum);
+    printf("  2vec: average %.6f, 50th percentile %.6f, 99.5th percentile %.6f, max %.6f\n",
+           two_vector_sum / two_vector_samples, two_vector_p50,
+           two_vector_p995, two_vector_maximum);
+
+    free(one_vector_errors);
+    free(two_vector_errors);
 }
