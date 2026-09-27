@@ -8,9 +8,9 @@
 
 /**
  * \fn normalize3
- * 
+ *
  * \brief Normalizes a 3D vector
- * 
+ *
  * \param[in,out] v The vector to normalize
  */
 static void normalize3(float *v) {
@@ -21,90 +21,69 @@ static void normalize3(float *v) {
         v[2] /= n;
     }
 }
-
-static float dot3(const float *a, const float *b)
-{
-    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-}
-// --- Main function ---
-
 /**
- * \fn down_quat
- * 
- * \brief Computes the quaternion that rotates the satellite from its current orientation to a "down" orientation where the body Z-axis points towards Earth.
- * 
- * \param[in] from Current position vector of the satellite in ECI frame
- * \param[in] to Target position vector (e.g., Earth's center) in ECI frame
- * \param[in] q_body_to_eci Current orientation of the satellite as a quaternion (Body → ECI)
- * \param[out] goal_q Desired orientation quaternion (Body → ECI) that points down
+ * \fn pointing_error
+ *
+ * \brief Computes the error quaternion between the current attitude and the attitude
+ *        where the body Z-axis points at Providence and the body Y-axis is normal to
+ *        the plane of the target direction and the velocity.
+ *
+ * \param[in]  r_eci           ECI coordinates of satellite position (3 elements)
+ * \param[in]  v_eci           ECI velocity of satellite (3 elements)
+ * \param[in]  q_b2eci         Current orientation quaternion, body to ECI, ACTIVE convention, WXYZ (4 elements)
+ * \param[in]  providence_eci  ECI coordinates of Providence, Rhode Island (3 elements)
+ * \param[out] q_tgtb          Error quaternion, with axis in body coordinates, WXYZ (4 elements)
+ * \param[out] z_want          Desired body Z-axis in ECI, unit vector (3 elements)
  */
-void down_quat(float* from, float* to, float* q_body_to_eci, float* goal_q)
+void down_quat(float* r_eci, float* v_eci, float* q_b2eci, float* providence_eci,
+                    float* q_tgtb, float* z_want)
 {
-    float nadir[3];
+    // Previous desired quaternion, kept across calls for sign continuity
+    static float q_want_prev[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 
-    // nadir = from - to
-    nadir[0] = from[0] - to[0];
-    nadir[1] = from[1] - to[1];
-    nadir[2] = from[2] - to[2];
+    // z_want = (providence - r) / |providence - r|
+    z_want[0] = providence_eci[0] - r_eci[0];
+    z_want[1] = providence_eci[1] - r_eci[1];
+    z_want[2] = providence_eci[2] - r_eci[2];
+    normalize3(z_want);
 
-    float nadir_norm = l2_norm(nadir, 3);
-    if (nadir_norm < EPS) {
-        // Degenerate case: return identity quaternion
-        goal_q[0] = 1.0f;
-        goal_q[1] = 0.0f;
-        goal_q[2] = 0.0f;
-        goal_q[3] = 0.0f;
-        return;
+    // y_want = z_want x v
+    float y_want[3];
+    cross(z_want, v_eci, y_want);
+    normalize3(y_want);
+
+    // x_want = y_want x z_want
+    float x_want[3];
+    cross(y_want, z_want, x_want);
+    normalize3(x_want);
+
+    // R_want_eci = [x_want, y_want, z_want] (columns), stored row-major
+    float R_want_eci[9];
+    R_want_eci[0] = x_want[0]; R_want_eci[1] = y_want[0]; R_want_eci[2] = z_want[0];
+    R_want_eci[3] = x_want[1]; R_want_eci[4] = y_want[1]; R_want_eci[5] = z_want[1];
+    R_want_eci[6] = x_want[2]; R_want_eci[7] = y_want[2]; R_want_eci[8] = z_want[2];
+
+    float q_want_eci[4];
+    rotm_to_quat(R_want_eci, q_want_eci);
+
+    // Keep the same hemisphere as the previous timestep
+    float d = q_want_eci[0] * q_want_prev[0] + q_want_eci[1] * q_want_prev[1]
+            + q_want_eci[2] * q_want_prev[2] + q_want_eci[3] * q_want_prev[3];
+    if (d < 0.0f) {
+        q_want_eci[0] = -q_want_eci[0];
+        q_want_eci[1] = -q_want_eci[1];
+        q_want_eci[2] = -q_want_eci[2];
+        q_want_eci[3] = -q_want_eci[3];
     }
-    normalize3(nadir);
 
-    // Get current rotation matrix (Body → ECI)
-    float R[9];
-    quat2rotm(q_body_to_eci, R);
+    // Store for next timestep
+    q_want_prev[0] = q_want_eci[0];
+    q_want_prev[1] = q_want_eci[1];
+    q_want_prev[2] = q_want_eci[2];
+    q_want_prev[3] = q_want_eci[3];
 
-    // Extract body Y-axis in ECI (2nd column)
-    float y[3] = { R[1], R[4], R[7] };
-
-    // Project y onto plane perpendicular to nadir
-    float proj = dot3(y, nadir);
-    float new_y[3] = {
-        y[0] - proj * nadir[0],
-        y[1] - proj * nadir[1],
-        y[2] - proj * nadir[2]
-    };
-
-    float new_y_norm = l2_norm(new_y,3);
-
-    // Handle degeneracy (y nearly parallel to nadir)
-    if (new_y_norm < EPS) {
-        // Pick arbitrary orthogonal vector
-        if (fabsf(nadir[0]) < 0.9f) {
-            new_y[0] = 0.0f;
-            new_y[1] = -nadir[2];
-            new_y[2] = nadir[1];
-        } else {
-            new_y[0] = -nadir[1];
-            new_y[1] = nadir[0];
-            new_y[2] = 0.0f;
-        }
-    }
-    normalize3(new_y);
-
-    // Compute x = nadir × new_y
-    float x[3];
-    cross(nadir, new_y, x);
-    normalize3(x);
-
-    // Recompute new_y = x × nadir (ensures orthogonality)
-    cross(x, nadir, new_y);
-
-    // Build rotation matrix (row-major)
-    float new_R[9];
-
-    new_R[0] = x[0];     new_R[1] = new_y[0];  new_R[2] = nadir[0];
-    new_R[3] = x[1];     new_R[4] = new_y[1];  new_R[5] = nadir[1];
-    new_R[6] = x[2];     new_R[7] = new_y[2];  new_R[8] = nadir[2];
-
-    // Convert to quaternion
-    rotm_to_quat(new_R, goal_q);
+    // q_tgtb = inv(q_b2eci) * q_want_eci
+    float q_b2eci_inv[4];
+    quat_inv(q_b2eci, q_b2eci_inv);
+    quat_multiply(q_b2eci_inv, q_want_eci, q_tgtb);
 }
