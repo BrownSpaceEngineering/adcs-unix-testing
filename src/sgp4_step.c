@@ -19,37 +19,38 @@
  * \param[in]  oe_epoch  SGP4/TLE mean elements at epoch, 6 elements
  * \param[in]  bstar     B* drag term (1/earth radii)
  * \param[in]  epoch_jd  Julian date (UTC) of the element epoch
- * \param[in]  dt        Time since element epoch (s)
+ * \param[in]  dt        Time since element epoch (s); take the difference in double/integer
+ *                       time before casting to float
  * \param[out] r_gcrf    Position (km) in GCRF, 3 elements
  * \param[out] v_gcrf    Velocity (km/s) in GCRF, 3 elements
  * \param[out] oe_osc    Osculating Keplerian elements in GCRF, 7 elements
  *
  * \return errCode from sgp4_propagate (0 ok)
  */
-int sgp4_step(const double *oe_epoch, double bstar, double epoch_jd, double dt,
-              double *r_gcrf, double *v_gcrf, double *oe_osc)
+int sgp4_step(const float *oe_epoch, float bstar, double epoch_jd, float dt,
+              float *r_gcrf, float *v_gcrf, float *oe_osc)
 {
     // Kept across calls so sgp4_init only reruns when new elements arrive
     static sgp4_sat_t sat;
-    static double last_key[8];
+    static float last_elems[7];
+    static double last_epoch_jd;
     static bool initialized = false;
 
-    double key[8];
-    memcpy(key, oe_epoch, sizeof(double) * 6);
-    key[6] = bstar;
-    key[7] = epoch_jd;
+    float elems[7];
+    memcpy(elems, oe_epoch, sizeof(float) * 6);
+    elems[6] = bstar;
 
-    bool changed = !initialized;
-    for (int k = 0; k < 8 && !changed; k++) {
-        changed = (key[k] != last_key[k]);
-    }
+    // bitwise compare: any change to the held elements means a new uplink
+    bool changed = !initialized || memcmp(elems, last_elems, sizeof(elems)) != 0 ||
+                   memcmp(&epoch_jd, &last_epoch_jd, sizeof(epoch_jd)) != 0;
 
     if (changed) {
-        memcpy(last_key, key, sizeof(key));
+        memcpy(last_elems, elems, sizeof(elems));
+        last_epoch_jd = epoch_jd;
         sgp4_init(oe_epoch, bstar, epoch_jd, &sat);
         initialized = true;
     }
 
-    double oe_mean[6], r_teme[3], v_teme[3];
+    float oe_mean[6], r_teme[3], v_teme[3];
     return sgp4_propagate(&sat, dt, r_gcrf, v_gcrf, oe_osc, oe_mean, r_teme, v_teme);
 }

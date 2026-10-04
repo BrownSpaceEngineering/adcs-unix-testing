@@ -9,6 +9,119 @@
 #define DELTA_AT 37.0
 // =====================================================================
 
+// C = A * B, all 3x3 row-major
+static void matmul3(const double *A, const double *B, double *C) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            C[3 * i + j] = A[3 * i] * B[j] + A[3 * i + 1] * B[3 + j] + A[3 * i + 2] * B[6 + j];
+        }
+    }
+}
+
+// Rk(a) rotates the coordinate frame by +a about axis k (row-major)
+static void rot1(double a, double *M) {
+    double c = cos(a), s = sin(a);
+    M[0] = 1.0; M[1] = 0.0; M[2] = 0.0;
+    M[3] = 0.0; M[4] = c;   M[5] = s;
+    M[6] = 0.0; M[7] = -s;  M[8] = c;
+}
+
+static void rot2(double a, double *M) {
+    double c = cos(a), s = sin(a);
+    M[0] = c;   M[1] = 0.0; M[2] = -s;
+    M[3] = 0.0; M[4] = 1.0; M[5] = 0.0;
+    M[6] = s;   M[7] = 0.0; M[8] = c;
+}
+
+static void rot3(double a, double *M) {
+    double c = cos(a), s = sin(a);
+    M[0] = c;   M[1] = s;   M[2] = 0.0;
+    M[3] = -s;  M[4] = c;   M[5] = 0.0;
+    M[6] = 0.0; M[7] = 0.0; M[8] = 1.0;
+}
+
+/**
+ * \fn teme2gcrf_matrix
+ *
+ * \brief Rotation TEME -> GCRF using IAU-76 precession and IAU-80 nutation
+ *        (Vallado teme2eci: r_gcrf = P * N * R3(-eqe) * r_teme).
+ *
+ * Nutation truncated to the 10 largest IAU-80 terms (omitted terms each
+ * < 0.02 arcsec, < ~1 m at LEO); the ~23 mas FK5->GCRF frame bias is ignored.
+ *
+ * \param[in]  T  TT Julian centuries since J2000
+ * \param[out] R  3x3 rotation matrix, row-major
+ */
+static void teme2gcrf_matrix(double T, double *R) {
+    const double as2r = SGP4_PI / (180.0 * 3600.0);
+    double T2 = T * T;
+    double T3 = T2 * T;
+
+    // IAU-76 precession angles
+    double zeta  = (2306.2181 * T + 0.30188 * T2 + 0.017998 * T3) * as2r;
+    double theta = (2004.3109 * T - 0.42665 * T2 - 0.041833 * T3) * as2r;
+    double z     = (2306.2181 * T + 1.09468 * T2 + 0.018203 * T3) * as2r;
+
+    // mean obliquity of the ecliptic
+    double epsb = (84381.448 - 46.8150 * T - 0.00059 * T2 + 0.001813 * T3) * as2r;
+
+    // IAU-80 fundamental arguments
+    const double r = 1296000.0;
+    double l  = fmod(485866.733  + (1325.0 * r +  715922.633) * T + 31.310 * T2 + 0.064 * T3, r) * as2r;
+    double lp = fmod(1287099.804 + (  99.0 * r + 1292581.224) * T -  0.577 * T2 - 0.012 * T3, r) * as2r;
+    double F  = fmod(335778.877  + (1342.0 * r +  295263.137) * T - 13.257 * T2 + 0.011 * T3, r) * as2r;
+    double D  = fmod(1072261.307 + (1236.0 * r + 1105601.328) * T -  6.891 * T2 + 0.019 * T3, r) * as2r;
+    double Om = fmod(450160.280  - (   5.0 * r +  482890.539) * T +  7.455 * T2 + 0.008 * T3, r) * as2r;
+
+    // largest IAU-80 nutation terms, units 0.0001 arcsec
+    //  [l lp F D Om], dpsi = (A + B T) sin(arg), deps = (C + D T) cos(arg)
+    static const double nut[10][9] = {
+        { 0,  0,  0,  0,  1,  -171996.0, -174.2,  92025.0,   8.9},
+        { 0,  0,  2, -2,  2,   -13187.0,   -1.6,   5736.0,  -3.1},
+        { 0,  0,  2,  0,  2,    -2274.0,   -0.2,    977.0,  -0.5},
+        { 0,  0,  0,  0,  2,     2062.0,    0.2,   -895.0,   0.5},
+        { 0,  1,  0,  0,  0,     1426.0,   -3.4,     54.0,  -0.1},
+        { 1,  0,  0,  0,  0,      712.0,    0.1,     -7.0,   0.0},
+        { 0,  1,  2, -2,  2,     -517.0,    1.2,    224.0,  -0.6},
+        { 0,  0,  2,  0,  1,     -386.0,   -0.4,    200.0,   0.0},
+        { 1,  0,  2,  0,  2,     -301.0,    0.0,    129.0,  -0.1},
+        { 0, -1,  2, -2,  2,      217.0,   -0.5,    -95.0,   0.3}
+    };
+    double dpsi = 0.0, deps = 0.0;
+    for (int k = 0; k < 10; k++) {
+        double arg = nut[k][0] * l + nut[k][1] * lp + nut[k][2] * F + nut[k][3] * D + nut[k][4] * Om;
+        dpsi += (nut[k][5] + nut[k][6] * T) * sin(arg);
+        deps += (nut[k][7] + nut[k][8] * T) * cos(arg);
+    }
+    dpsi = dpsi * 1.0e-4 * as2r;
+    deps = deps * 1.0e-4 * as2r;
+    double epst = epsb + deps;
+
+    // equation of the equinoxes (TEME -> TOD is a rotation about z)
+    double eqe = dpsi * cos(epsb);
+
+    //  TOD   = R3(-eqe) * TEME
+    //  MOD   = N * TOD,  N = R1(-epsb) * R3(dpsi) * R1(epst)
+    //  J2000 = P * MOD,  P = R3(zeta) * R2(-theta) * R3(z)
+    double A[9], B[9], tmp[9], N[9], P[9], PN[9];
+
+    rot1(-epsb, A);
+    rot3(dpsi, B);
+    matmul3(A, B, tmp);
+    rot1(epst, A);
+    matmul3(tmp, A, N);
+
+    rot3(zeta, A);
+    rot2(-theta, B);
+    matmul3(A, B, tmp);
+    rot3(z, A);
+    matmul3(tmp, A, P);
+
+    matmul3(P, N, PN);
+    rot3(-eqe, A);
+    matmul3(PN, A, R);
+}
+
 /**
  * \fn sgp4_init
  *
@@ -27,14 +140,14 @@
  *                        argp (rad) argument of perigee,
  *                        M (rad) mean anomaly]
  * \param[in]  bstar     B* drag term (1/earth radii), TLE line 1 cols 54-61
- * \param[in]  epoch_jd  Julian date (UTC) of the element epoch. Only used for the
- *                       slowly varying TEME->GCRF rotation, so its precision is not
- *                       critical; the propagation itself only sees dt.
+ * \param[in]  epoch_jd  Julian date (UTC) of the element epoch, double (a float JD only
+ *                       resolves 0.25 day). Only used for the TEME->GCRF rotation, which is
+ *                       evaluated once here at epoch; the propagation itself only sees dt.
  * \param[out] sat       Precomputed constants for sgp4_propagate.
  *                       sat->initErr = 0 ok, 7 = deep-space orbit (period >= 225 min),
  *                       not supported.
  */
-void sgp4_init(const double *oe_epoch, double bstar, double epoch_jd, sgp4_sat_t *sat)
+void sgp4_init(const float *oe_epoch, float bstar_f, double epoch_jd, sgp4_sat_t *sat)
 {
 #if GRAV_MODEL == 84
     const double radiusearthkm = 6378.137;
@@ -49,18 +162,19 @@ void sgp4_init(const double *oe_epoch, double bstar, double epoch_jd, sgp4_sat_t
     const double j3 = -0.00000253881;
     const double j4 = -0.00000165597;
 #endif
+    const double bstar = (double)bstar_f;
     const double xke   = 60.0 / sqrt(radiusearthkm * radiusearthkm * radiusearthkm / mu); // sqrt(mu) in er^1.5/min
     const double j3oj2 = j3 / j2;
     const double twopi = 2.0 * SGP4_PI;
     const double x2o3  = 2.0 / 3.0;
     const double temp4 = 1.5e-12;
 
-    double no_kozai = oe_epoch[0] * twopi / 1440.0; // rev/day -> rad/min
-    double ecco  = oe_epoch[1];
-    double inclo = oe_epoch[2];
-    double nodeo = oe_epoch[3];
-    double argpo = oe_epoch[4];
-    double mo    = oe_epoch[5];
+    double no_kozai = (double)oe_epoch[0] * twopi / 1440.0; // rev/day -> rad/min
+    double ecco  = (double)oe_epoch[1];
+    double inclo = (double)oe_epoch[2];
+    double nodeo = (double)oe_epoch[3];
+    double argpo = (double)oe_epoch[4];
+    double mo    = (double)oe_epoch[5];
 
     // ------------------------- initl ------------------------------------
     double eccsq  = ecco * ecco;
@@ -172,45 +286,50 @@ void sgp4_init(const double *oe_epoch, double bstar, double epoch_jd, sgp4_sat_t
         t5cof = 0.2 * (3.0 * d4 + 12.0 * cc1 * d3 + 6.0 * d2 * d2 + 15.0 * cc1sq * (2.0 * d2 + cc1sq));
     }
 
-    // TT Julian centuries since J2000 at epoch (for TEME -> GCRF)
+    // TEME -> GCRF at epoch (TT Julian centuries since J2000). Held fixed between uplinks:
+    // it only drifts ~0.3 arcsec/day (< ~10 m at LEO over a day).
     double T0 = (epoch_jd + (DELTA_AT + 32.184) / 86400.0 - 2451545.0) / 36525.0;
+    double R[9];
+    teme2gcrf_matrix(T0, R);
 
     sat->initErr       = initErr;
     sat->isimp         = isimp;
-    sat->radiusearthkm = radiusearthkm;
-    sat->xke           = xke;
-    sat->j2            = j2;
-    sat->vkmpersec     = radiusearthkm * xke / 60.0;
-    sat->bstar         = bstar;
-    sat->ecco          = ecco;
-    sat->inclo         = inclo;
-    sat->nodeo         = nodeo;
-    sat->argpo         = argpo;
-    sat->mo            = mo;
-    sat->no_unkozai    = no_unkozai;
-    sat->mdot          = mdot;
-    sat->argpdot       = argpdot;
-    sat->nodedot       = nodedot;
-    sat->nodecf        = nodecf;
-    sat->cc1           = cc1;
-    sat->cc4           = cc4;
-    sat->cc5           = cc5;
-    sat->t2cof         = t2cof;
-    sat->omgcof        = omgcof;
-    sat->xmcof         = xmcof;
-    sat->eta           = eta;
-    sat->delmo         = delmo;
-    sat->sinmao        = sinmao;
-    sat->d2            = d2;
-    sat->d3            = d3;
-    sat->d4            = d4;
-    sat->t3cof         = t3cof;
-    sat->t4cof         = t4cof;
-    sat->t5cof         = t5cof;
-    sat->con41         = con41;
-    sat->x1mth2        = x1mth2;
-    sat->x7thm1        = x7thm1;
-    sat->xlcof         = xlcof;
-    sat->aycof         = aycof;
-    sat->T0            = T0;
+    sat->radiusearthkm = (float)radiusearthkm;
+    sat->xke           = (float)xke;
+    sat->j2            = (float)j2;
+    sat->vkmpersec     = (float)(radiusearthkm * xke / 60.0);
+    sat->bstar         = (float)bstar;
+    sat->ecco          = (float)ecco;
+    sat->inclo         = (float)inclo;
+    sat->nodeo         = (float)nodeo;
+    sat->argpo         = (float)argpo;
+    sat->mo            = (float)mo;
+    sat->no_unkozai    = (float)no_unkozai;
+    sat->mdot          = (float)mdot;
+    sat->argpdot       = (float)argpdot;
+    sat->nodedot       = (float)nodedot;
+    sat->nodecf        = (float)nodecf;
+    sat->cc1           = (float)cc1;
+    sat->cc4           = (float)cc4;
+    sat->cc5           = (float)cc5;
+    sat->t2cof         = (float)t2cof;
+    sat->omgcof        = (float)omgcof;
+    sat->xmcof         = (float)xmcof;
+    sat->eta           = (float)eta;
+    sat->delmo         = (float)delmo;
+    sat->sinmao        = (float)sinmao;
+    sat->d2            = (float)d2;
+    sat->d3            = (float)d3;
+    sat->d4            = (float)d4;
+    sat->t3cof         = (float)t3cof;
+    sat->t4cof         = (float)t4cof;
+    sat->t5cof         = (float)t5cof;
+    sat->con41         = (float)con41;
+    sat->x1mth2        = (float)x1mth2;
+    sat->x7thm1        = (float)x7thm1;
+    sat->xlcof         = (float)xlcof;
+    sat->aycof         = (float)aycof;
+    for (int k = 0; k < 9; k++) {
+        sat->R_teme2gcrf[k] = (float)R[k];
+    }
 }

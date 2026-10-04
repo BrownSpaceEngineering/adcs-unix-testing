@@ -1,0 +1,9 @@
+# Editor-only flags for the MATLAB MEX wrappers in test/ (not in CMake's compile_commands.json).
+# mex adds these itself when building; this just lets clangd find mex.h.
+If:
+  PathMatch: test/.*_mex\.c
+CompileFlags:
+  Add:
+    - -I/Applications/MATLAB_R2025b.app/extern/include
+    - -DMATLAB_MEX_FILE
+    - -I..
