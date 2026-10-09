@@ -349,7 +349,7 @@ void test_linalg(void) {
     check_true(!all_finite(nanv, 3), "all_finite detects NaN");
 
     float I4[16];
-    eye(I4, 4);
+    eye_f32(I4, 4);
     bool eye_ok = true;
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
@@ -383,7 +383,7 @@ void test_matrix_product(void) {
 
     float identity[4 * 4] = {0.};
     float large_result[4 * 4] = {0.};
-    eye(identity, 4);
+    eye_f32(identity, 4);
     arm_matrix_instance_f32 identity_mat = {4, 4, identity};
     arm_matrix_instance_f32 large_result_mat = {4, 4, large_result};
     arm_mat_mult_f32(&identity_mat, &identity_mat, &large_result_mat);
@@ -1155,7 +1155,7 @@ void test_iteration_1vec(void) {
     float cov[36];
     float Q[36];
     float R[36];
-    eye(cov, 6);
+    eye_f32(cov, 6);
     arm_scale_f32(cov, 0.1, cov, 36);
     memset(R, 0, sizeof(float) * 36);
     R[0] = 0.03f;
@@ -1170,7 +1170,7 @@ void test_iteration_1vec(void) {
     memset(Q, 0, sizeof(Q));
     Q[0] = Q[7] = Q[14] = 1e-5f;
     Q[21] = Q[28] = Q[35] = 1e-10f;
-    eye(cov, 6);
+    eye_f32(cov, 6);
     arm_scale_f32(cov, 0.1, cov, 36);
     cov[21] = cov[28] = cov[35] = 1e-4f;
 
@@ -1272,11 +1272,11 @@ void test_iteration_2vec(void) {
 
     float state[6] = {0, 0, 0, 0, 0, 0};
     float cov[36], Q[36], R[36];
-    eye(cov, 6);
+    eye_f32(cov, 6);
     arm_scale_f32(cov, 0.1, cov, 36);
-    eye(R, 6);
+    eye_f32(R, 6);
     arm_scale_f32(R, 0.1, R, 36);
-    eye(Q, 6);
+    eye_f32(Q, 6);
     arm_scale_f32(Q, 0.01, Q, 36);
     // The legacy Q = 0.01 I (bias random walk of 0.1 rad/s per step) makes the bias
     // unobservable; use a small bias process noise so the bias can actually be estimated
