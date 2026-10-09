@@ -24,9 +24,6 @@ extern const float R_IN_SHADOW[3 * 3];
 #error "Magnetorquer quiet start must be within the measurement cycle"
 #endif
 
-/* Apply B* and UTC epoch to the next non-NULL posn_update; consumed once. */
-bool body_set_tle_metadata(double bstar, double epoch_jd);
-
 /**
  * One ADCS step.
  *
@@ -59,4 +56,6 @@ bool body_get_attitude(float* q_body_to_eci);
 void body_get_gyro_bias(float* bias);
 // Number of times the filter has been declared failed and reset to detumbling
 int body_get_filter_resets(void);
+/* Apply B* and UTC epoch to the next non-NULL posn_update; consumed once. */
+bool body_set_tle_metadata(float bstar, double epoch_jd);
 #endif

@@ -68,10 +68,10 @@ const float R_IN_SHADOW[3 * 3] = {
 #define MAX_POINTING_RATE_RAD_S 1.0f
 
 // ---- Module state (previously `static` in body.h, which gave every includer its own copy) ----
-static double tle_mean[6];
-static double tle_bstar;
+static float tle_mean[6];
+static float tle_bstar;
 static double tle_epoch_jd;
-static double pending_bstar;
+static float pending_bstar;
 static double pending_epoch_jd;
 static bool tle_metadata_pending = false;
 static float estimated_quat[4];
@@ -113,7 +113,7 @@ void body_reset(void) {
     pointing_tick = 0;
 }
 
-bool body_set_tle_metadata(double bstar, double epoch_jd) {
+bool body_set_tle_metadata(float bstar, double epoch_jd) {
     if (!isfinite(bstar) || !isfinite(epoch_jd)) {
         return false;
     }
@@ -233,7 +233,7 @@ static bool ready_to_point(const float* photodiode_measurements, const float* gy
            && in_sun;
 }
 
-static bool valid_tle_mean(const double* elements) {
+static bool valid_tle_mean(const float* elements) {
     if (!isfinite(elements[0]) || elements[0] <= 0.0 || !isfinite(elements[1])
         || elements[1] < 0.0 || elements[1] >= 1.0) return false;
     for (int i = 2; i < 6; i++) {
@@ -279,14 +279,14 @@ void body(const float* last_magnetometer_measurements, // 1x3
     // A new TLE replaces the saved epoch elements; otherwise propagate the saved TLE.
     double current_jd = (double)jd_scalar + (double)jd_frac;
     if (!isfinite(current_jd)) return;
-    double new_tle[6];
-    const double* active_tle = tle_mean;
-    double active_bstar = tle_bstar;
+    float new_tle[6];
+    const float* active_tle = tle_mean;
+    float active_bstar = tle_bstar;
     double active_epoch_jd = tle_epoch_jd;
     if (posn_update != NULLPTR) {
         // Validate the incoming TLE before adopting it
         if (!all_finite(posn_update, 6)) return;
-        for (int i = 0; i < 6; i++) new_tle[i] = (double)posn_update[i];
+        memcpy(new_tle, posn_update, sizeof(new_tle));
         if (!valid_tle_mean(new_tle)) return;
         active_tle = new_tle;
         active_bstar = tle_metadata_pending ? pending_bstar : 0.0;
@@ -298,8 +298,8 @@ void body(const float* last_magnetometer_measurements, // 1x3
     // Propagate the orbit with SGP4 to the current time
     double seconds_since_epoch = (current_jd - active_epoch_jd) * 86400.0;
     if (!isfinite(seconds_since_epoch)) return;
-    double r_km[3], v_km_s[3], oe_osc[7];
-    if (sgp4_step(active_tle, active_bstar, active_epoch_jd, seconds_since_epoch,
+    float r_km[3], v_km_s[3], oe_osc[7];
+    if (sgp4_step(active_tle, active_bstar, active_epoch_jd, (float)seconds_since_epoch,
                   r_km, v_km_s, oe_osc) != 0) return;
 
     // WMM and pointing use metres; SGP4 returns kilometres and km/s.

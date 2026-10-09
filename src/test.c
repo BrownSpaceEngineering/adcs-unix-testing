@@ -1966,7 +1966,7 @@ typedef struct {
     float gyro_bias[3];
     float tle_mean[6]; // n (rev/day), e, i, RAAN, argp, M (rad)
     double tle_epoch_jd;
-    double tle_bstar;
+    float tle_bstar;
     bool tle_sent;
     int unix_time;
     int jd_int;
@@ -1997,10 +1997,9 @@ static void body_sim_init(body_sim_t* s) {
 // Sensor readings consistent with the truth state
 static void body_sim_sensors(body_sim_t* s, bool sunlit, float* mag, float* gyro, float* diodes) {
     float r[3], b_eci[3], sun_eci[3], sun_body[3];
-    double tle[6], r_km[3], v_km_s[3], oe_osc[7];
-    for (int i = 0; i < 6; i++) tle[i] = (double)s->tle_mean[i];
+    float r_km[3], v_km_s[3], oe_osc[7];
     double elapsed = ((double)s->jd_int + s->jd_frac - s->tle_epoch_jd) * 86400.0;
-    int orbit_status = sgp4_step(tle, s->tle_bstar, s->tle_epoch_jd, elapsed,
+    int orbit_status = sgp4_step(s->tle_mean, s->tle_bstar, s->tle_epoch_jd, (float)elapsed,
                                  r_km, v_km_s, oe_osc);
     if (orbit_status != 0) {
         memset(mag, 0, sizeof(float) * 3);
