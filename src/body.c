@@ -4,24 +4,18 @@
 #include "include/down_quat.h"
 #include "include/ecef2eci.h"
 #include "include/iterate.h"
-#include "include/kepler.h"
 #include "include/laextension.h"
 #include "include/magnetosphere.h"
 #include "include/moments2currents.h"
-#include "include/orbital2eci.h"
 #include "include/pd.h"
 #include "include/photodiode_determination.h"
 #include "include/quat.h"
 #include "include/quest.h"
+#include "include/sgp4_step.h"
 #include "include/sunvec.h"
 #include "include/torque2moments.h"
 #include "math.h"
 #include "string.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#define DEG2RAD ((float)M_PI / 180.0f)
 
 // Providence, lla2ecef(41.825226, -71.418884, 0) (see eceftoeci.m)
 float PVD_ECEF[3] = {6.3761e6f, -0.1387e6f, 0.0807e6f};
@@ -70,9 +64,16 @@ const float R_IN_SHADOW[3 * 3] = {
 // this many consecutive steps
 #define MAX_INNOVATION_RAD 0.45f
 #define MAX_INNOVATION_STRIKES 5
+// A rate above this while pointing indicates a new tumble or a gyro fault.
+#define MAX_POINTING_RATE_RAD_S 1.0f
 
 // ---- Module state (previously `static` in body.h, which gave every includer its own copy) ----
-static float kepler_posn[6];
+static double tle_mean[6];
+static double tle_bstar;
+static double tle_epoch_jd;
+static double pending_bstar;
+static double pending_epoch_jd;
+static bool tle_metadata_pending = false;
 static float estimated_quat[4];
 static float estimated_gyro_bias[3];
 static float error_quat_state[6];
@@ -80,15 +81,21 @@ static float error_quat_cov[6 * 6];
 static float q_want_prev[4] = {1, 0, 0, 0};
 
 static bool pointing = false;
-static bool posn_initialized = false;
+static bool tle_initialized = false;
 static bool attitude_initialized = false;
 static int filter_resets = 0;
 static int innovation_strikes = 0;
+static unsigned int pointing_tick = 0;
 
 static const float ZERO3[3] = {0, 0, 0};
 
 void body_reset(void) {
-    memset(kepler_posn, 0, sizeof(kepler_posn));
+    memset(tle_mean, 0, sizeof(tle_mean));
+    tle_bstar = 0.0;
+    tle_epoch_jd = 0.0;
+    pending_bstar = 0.0;
+    pending_epoch_jd = 0.0;
+    tle_metadata_pending = false;
     memset(estimated_quat, 0, sizeof(estimated_quat));
     estimated_quat[0] = 1.0f;
     memset(estimated_gyro_bias, 0, sizeof(estimated_gyro_bias));
@@ -99,10 +106,21 @@ void body_reset(void) {
     q_want_prev[2] = 0.0f;
     q_want_prev[3] = 0.0f;
     pointing = false;
-    posn_initialized = false;
+    tle_initialized = false;
     attitude_initialized = false;
     filter_resets = 0;
     innovation_strikes = 0;
+    pointing_tick = 0;
+}
+
+bool body_set_tle_metadata(double bstar, double epoch_jd) {
+    if (!isfinite(bstar) || !isfinite(epoch_jd)) {
+        return false;
+    }
+    pending_bstar = bstar;
+    pending_epoch_jd = epoch_jd;
+    tle_metadata_pending = true;
+    return true;
 }
 
 bool body_is_pointing(void) { return pointing; }
@@ -118,6 +136,10 @@ int body_get_filter_resets(void) { return filter_resets; }
 
 static void zero_currents(float* output_currents) { memcpy(output_currents, ZERO3, sizeof(ZERO3)); }
 
+static void command_zero_moment(float* output_currents) {
+    moment2current3axis(ZERO3, Imax, output_currents);
+}
+
 static void reset_filter_to_detumble(void) {
     memset(estimated_quat, 0, sizeof(estimated_quat));
     estimated_quat[0] = 1.0f;
@@ -127,6 +149,7 @@ static void reset_filter_to_detumble(void) {
     attitude_initialized = false;
     pointing = false;
     innovation_strikes = 0;
+    pointing_tick = 0;
     filter_resets++;
 }
 
@@ -180,6 +203,12 @@ static bool filter_failure(const float* new_quat, const float* gyro, const float
     return l2_norm(diff_rot, 3) > MAX_FILTER_JUMP_RAD;
 }
 
+static bool mag_ok(const float* measurement) {
+    if (measurement == NULLPTR || !all_finite(measurement, 3)) return false;
+    float norm = l2_norm(measurement, 3);
+    return norm > 1e-30f && isfinite(norm);
+}
+
 /**
  * True when rates are low enough to stop detumbling and we can see the sun (needed for QUEST).
  *
@@ -189,8 +218,8 @@ static bool filter_failure(const float* new_quat, const float* gyro, const float
 static bool ready_to_point(const float* photodiode_measurements, const float* gyro,
                            const float* last_magnetometer_measurements,
                            const float* magnetometer_measurements, float dt) {
-    if (gyro == NULLPTR || last_magnetometer_measurements == NULLPTR
-        || magnetometer_measurements == NULLPTR || photodiode_measurements == NULLPTR || !(dt > 0.0f)) {
+    if (gyro == NULLPTR || photodiode_measurements == NULLPTR || !(dt > 0.0f)
+        || !mag_ok(last_magnetometer_measurements) || !mag_ok(magnetometer_measurements)) {
         return false;
     }
     float dM[3];
@@ -204,100 +233,140 @@ static bool ready_to_point(const float* photodiode_measurements, const float* gy
            && in_sun;
 }
 
-// Satellite ECI position (m) and velocity (m/s) from the stored elements (angles in degrees)
-static void current_eci(float* r_eci, float* v_eci) {
-    float kepler_rad[6] = {kepler_posn[0],
-                           kepler_posn[1],
-                           kepler_posn[2] * DEG2RAD,
-                           kepler_posn[3] * DEG2RAD,
-                           kepler_posn[4] * DEG2RAD,
-                           kepler_posn[5] * DEG2RAD};
-    orbital_to_eci_posvel(kepler_rad, MU_EARTH_M3_S2, r_eci, v_eci);
+static bool valid_tle_mean(const double* elements) {
+    if (!isfinite(elements[0]) || elements[0] <= 0.0 || !isfinite(elements[1])
+        || elements[1] < 0.0 || elements[1] >= 1.0) return false;
+    for (int i = 2; i < 6; i++) {
+        if (!isfinite(elements[i])) return false;
+    }
+    return true;
 }
 
 void body(const float* last_magnetometer_measurements, // 1x3
           const float* magnetometer_measurements,      // 1x3
           const float* gyro_measurements,              // 1x3, radians
           const float* photodiode_measurements,        // 1xNUM_DIODES, raw readings
-          const float* posn_update,                    // 1x6, may be NULLPTR
+          const float* posn_update,                    // TLE mean elements, or NULLPTR
           int unix_time,                               // unix time
           int jd_scalar,                               // scalar JD
           float jd_frac,                               // fractional JD
           float dt,                                    // time since last update
           float* output_currents) {
-    if (output_currents == NULLPTR) {
+    // memzero output currents to start. ensures that any "bail" automatically sets output currents to 0
+    if (output_currents != NULLPTR) zero_currents(output_currents);
+    else return;
+
+    // Bad magnetometer data: drop back to detumbling and bail
+    if (!mag_ok(last_magnetometer_measurements) || !mag_ok(magnetometer_measurements)) {
+        if (pointing) reset_filter_to_detumble();
         return;
     }
-    zero_currents(output_currents);
-
-    if (magnetometer_measurements == NULLPTR || last_magnetometer_measurements == NULLPTR
-        || gyro_measurements == NULLPTR || photodiode_measurements == NULLPTR || !(dt > 0.0f)
-        || !isfinite(dt) || !all_finite(magnetometer_measurements, 3)
-        || !all_finite(last_magnetometer_measurements, 3) || !all_finite(gyro_measurements, 3)) {
-        return;
-    }
-
-    // Update position
-    if (posn_update != NULLPTR && all_finite(posn_update, 6)) {
-        memcpy(kepler_posn, posn_update, sizeof(float) * 6);
-        posn_initialized = true;
-    } else if (posn_initialized) {
-        float new_posn[6];
-        propogateOrbitalElements(kepler_posn[0], kepler_posn[1], kepler_posn[2], kepler_posn[3],
-                                 kepler_posn[4], kepler_posn[5], dt, new_posn);
-        memcpy(kepler_posn, new_posn, sizeof(float) * 6);
-    }
-
-    // Make sure position exists before doing anything else
-    if (!posn_initialized) {
+    // Bail on null pointers, bad dt, or non-finite gyro
+    if (output_currents == NULLPTR || gyro_measurements == NULLPTR
+        || photodiode_measurements == NULLPTR || !(dt > 0.0f)
+        || !isfinite(dt) || !all_finite(gyro_measurements, 3)) {
         return;
     }
 
+    // Unit-vector the measured field; a zero-length reading is unusable
+    float mag_body_unit[3] = {magnetometer_measurements[0], magnetometer_measurements[1],
+                              magnetometer_measurements[2]};
+    if (!normalize_vec(mag_body_unit, 3)) {
+        if (pointing) reset_filter_to_detumble();
+        return;
+    }
+
+    // A new TLE replaces the saved epoch elements; otherwise propagate the saved TLE.
+    double current_jd = (double)jd_scalar + (double)jd_frac;
+    if (!isfinite(current_jd)) return;
+    double new_tle[6];
+    const double* active_tle = tle_mean;
+    double active_bstar = tle_bstar;
+    double active_epoch_jd = tle_epoch_jd;
+    if (posn_update != NULLPTR) {
+        // Validate the incoming TLE before adopting it
+        if (!all_finite(posn_update, 6)) return;
+        for (int i = 0; i < 6; i++) new_tle[i] = (double)posn_update[i];
+        if (!valid_tle_mean(new_tle)) return;
+        active_tle = new_tle;
+        active_bstar = tle_metadata_pending ? pending_bstar : 0.0;
+        active_epoch_jd = tle_metadata_pending ? pending_epoch_jd : current_jd;
+    } else if (!tle_initialized) {
+        return; // No orbit to propagate yet.
+    }
+
+    // Propagate the orbit with SGP4 to the current time
+    double seconds_since_epoch = (current_jd - active_epoch_jd) * 86400.0;
+    if (!isfinite(seconds_since_epoch)) return;
+    double r_km[3], v_km_s[3], oe_osc[7];
+    if (sgp4_step(active_tle, active_bstar, active_epoch_jd, seconds_since_epoch,
+                  r_km, v_km_s, oe_osc) != 0) return;
+
+    // WMM and pointing use metres; SGP4 returns kilometres and km/s.
     float r_eci[3], v_eci[3];
-    current_eci(r_eci, v_eci);
+    for (int i = 0; i < 3; i++) {
+        r_eci[i] = (float)(r_km[i] * 1000.0);
+        v_eci[i] = (float)(v_km_s[i] * 1000.0);
+    }
+    // Reject a degenerate propagated state
+    if (!all_finite(r_eci, 3) || !all_finite(v_eci, 3)
+        || !(l2_norm(r_eci, 3) > 0.0f) || !(l2_norm(v_eci, 3) > 0.0f)) return;
+    // Propagation succeeded, so commit the new TLE as the saved one
+    if (posn_update != NULLPTR) {
+        memcpy(tle_mean, new_tle, sizeof(tle_mean));
+        tle_bstar = active_bstar;
+        tle_epoch_jd = active_epoch_jd;
+        tle_initialized = true;
+        tle_metadata_pending = false;
+    }
 
     // Expected magnetometer reading (T, ECI)
     float expected_mag[3];
     wmm_eci_embedded_v2(r_eci, jd_scalar, jd_frac, expected_mag);
 
-    // Measured / expected unit vectors. Only directions are used by QUEST and the UKF, so the
-    // magnetometer's scale factor doesn't matter here.
-    float mag_body_unit[3] = {magnetometer_measurements[0], magnetometer_measurements[1],
-                              magnetometer_measurements[2]};
+    // Measured / expected normalized unit vectors.
     float mag_ref_unit[3] = {expected_mag[0], expected_mag[1], expected_mag[2]};
-    bool mag_ok = normalize_vec(mag_body_unit, 3) && normalize_vec(mag_ref_unit, 3);
+    // If degenerate model field, bail
+    if (!normalize_vec(mag_ref_unit, 3)) {
+        if (pointing) reset_filter_to_detumble();
+        return;
+    }
 
     // During detumbling...
     if (!pointing) {
         // Case 1: Measurements tell us to stop detumbling
-        if (mag_ok
-            && ready_to_point(photodiode_measurements, gyro_measurements,
-                              last_magnetometer_measurements, magnetometer_measurements, dt)) {
+        if (ready_to_point(photodiode_measurements, gyro_measurements,
+                           last_magnetometer_measurements, magnetometer_measurements, dt)) {
             // We only get here right after deployment or after a filter reset, so start the
             // bias estimate from zero
+
+            // Measured sun direction (body frame) and modeled sun direction (ECI)
             float photodiode_sun_vec[3];
             get_vec_from_photodiode_readings(photodiode_measurements, photodiode_sun_vec);
             float expected_sun_vec[3];
             sun_vec(unix_time, expected_sun_vec);
 
+            // Pair up body-frame and reference-frame vectors (mag, sun) for QUEST
             float body_vecs[6] = {mag_body_unit[0],      mag_body_unit[1],      mag_body_unit[2],
                                   photodiode_sun_vec[0], photodiode_sun_vec[1], photodiode_sun_vec[2]};
-            float ref_vecs[6] = {mag_ref_unit[0],     mag_ref_unit[1],     mag_ref_unit[2],
+            float ref_vecs[6] = {mag_ref_unit[0],    mag_ref_unit[1],     mag_ref_unit[2],
                                  expected_sun_vec[0], expected_sun_vec[1], expected_sun_vec[2]};
 
             // Uses QUEST to get initial attitude estimate
             float estimated_q[4];
-            if (!quest(body_vecs, ref_vecs, 2, estimated_q)) {
-                return; // sun and field (nearly) parallel: try again next step
+            if (quest(body_vecs, ref_vecs, 2, estimated_q)) {
+                // Seed the filter with the QUEST attitude and switch to pointing
+                memcpy(estimated_quat, estimated_q, sizeof(float) * 4);
+                memset(estimated_gyro_bias, 0, sizeof(estimated_gyro_bias));
+                memset(error_quat_state, 0, sizeof(error_quat_state));
+                memcpy(error_quat_cov, INIT_P, sizeof(error_quat_cov));
+                attitude_initialized = true;
+                pointing = true;
+                pointing_tick = 0;
+                command_zero_moment(output_currents);
+                return; // Start the first filter cycle on the next tick.
             }
-
-            memcpy(estimated_quat, estimated_q, sizeof(float) * 4);
-            memset(estimated_gyro_bias, 0, sizeof(float) * 3);
-            memset(error_quat_state, 0, sizeof(float) * 6);
-            memcpy(error_quat_cov, INIT_P, sizeof(float) * 6 * 6);
-            attitude_initialized = true;
-            pointing = true;
-            return;
+            // Parallel sun and field vectors cannot initialize QUEST; keep detumbling.
         }
         // Otherwise rely on B-dot to keep detumbling or to hold our attitude steady
         float moments[3];
@@ -307,17 +376,30 @@ void body(const float* last_magnetometer_measurements, // 1x3
     }
 
     // ---- During pointing ----
+    // Spinning too fast to point: go back to detumbling
+    if (l2_norm(gyro_measurements, 3) > MAX_POINTING_RATE_RAD_S) {
+        reset_filter_to_detumble();
+        return;
+    }
+    // Advance the tick counter (wraps at the update period); only the last tick takes a measurement
+    pointing_tick = pointing_tick == BODY_MEASUREMENT_UPDATE_PERIOD_TICKS
+                    ? 1u : pointing_tick + 1u;
+    bool do_update = pointing_tick == BODY_MEASUREMENT_UPDATE_PERIOD_TICKS;
+    // On ticks where filter updates with measurement, check whether the sun is visible
     float photodiode_sun_vec[3];
-    bool in_sun = get_vec_from_photodiode_readings(photodiode_measurements, photodiode_sun_vec);
+    bool in_sun = do_update
+                  && get_vec_from_photodiode_readings(photodiode_measurements, photodiode_sun_vec);
 
+    // Choose which vectors and noise matrix the UKF gets during an update tick
     float body_vecs[6] = {mag_body_unit[0], mag_body_unit[1], mag_body_unit[2], 0, 0, 0};
     float ref_vecs[6] = {mag_ref_unit[0], mag_ref_unit[1], mag_ref_unit[2], 0, 0, 0};
     int num_vecs;
     const float* R;
-    if (!mag_ok) {
-        num_vecs = 0; // no usable field: gyro propagation only
-        R = R_IN_SHADOW;
+    if (!do_update) {
+        num_vecs = 0; // scheduled gyro propagation between measurement ticks
+        R = NULLPTR;
     } else if (in_sun) {
+        // Sunlit: use both magnetometer and sun vectors
         float expected_sun_vec[3];
         sun_vec(unix_time, expected_sun_vec);
         memcpy(&body_vecs[3], photodiode_sun_vec, sizeof(float) * 3);
@@ -332,12 +414,13 @@ void body(const float* last_magnetometer_measurements, // 1x3
         R = R_IN_SHADOW;
     }
 
+    // Scale process noise by the timestep
     float Q_step[6 * 6];
     for (int i = 0; i < 36; i++) {
         Q_step[i] = Q_RATE[i] * dt;
     }
 
-    // Run the filter
+    // Predict every tick, with only every K-th tick being a predict + correction tick.
     float new_error_state[6];
     float new_estimated_quat[4];
     float new_P[6 * 6];
@@ -345,6 +428,7 @@ void body(const float* last_magnetometer_measurements, // 1x3
                                   num_vecs, gyro_measurements, Q_step, R, dt, new_error_state,
                                   new_estimated_quat, new_P);
 
+    // Filter errored or produced a bad estimate
     if (status != UKF_OK || filter_failure(new_estimated_quat, gyro_measurements, new_P, dt)) {
         // Reset everything and return to detumbling just in case
         reset_filter_to_detumble();
@@ -352,13 +436,15 @@ void body(const float* last_magnetometer_measurements, // 1x3
     }
 
     // Persistent disagreement with the sensors means we've diverged (e.g. after a gyro glitch)
-    if (num_vecs > 0 && worst_innovation(new_estimated_quat, body_vecs, ref_vecs, num_vecs) > MAX_INNOVATION_RAD) {
-        if (++innovation_strikes >= MAX_INNOVATION_STRIKES) {
-            reset_filter_to_detumble();
-            return;
+    if (num_vecs > 0) {
+        if (worst_innovation(new_estimated_quat, body_vecs, ref_vecs, num_vecs) > MAX_INNOVATION_RAD) {
+            if (++innovation_strikes >= MAX_INNOVATION_STRIKES) {
+                reset_filter_to_detumble();
+                return;
+            }
+        } else {
+            innovation_strikes = 0;
         }
-    } else {
-        innovation_strikes = 0;
     }
 
     // Prepare for next run (iterate already zeroed the attitude part)
@@ -367,27 +453,40 @@ void body(const float* last_magnetometer_measurements, // 1x3
     memcpy(estimated_quat, new_estimated_quat, sizeof(float) * 4);
     memcpy(estimated_gyro_bias, &new_error_state[3], sizeof(float) * 3);
 
+    // Coils settle before the update; convert a zero moment through the current model.
+    if (pointing_tick >= BODY_MAGNETORQUER_QUIET_START_TICK) {
+        command_zero_moment(output_currents);
+        return;
+    }
+
     // ---- Control: pointing_error.m -> PD_loop.m -> torque2moment3axis.m -> moment2current3axis.m
+    // Target ground location in ECI
     float pvd_eci[3];
     ecef_2_eci(PVD_ECEF, pvd_eci, unix_time);
 
     // Body-frame error quaternion. (The old code used goal * est^-1, an ECI-frame error, and
     // fed it to a controller that works in body coordinates.)
     float q_err[4];
+    // No valid pointing solution: coast with the coils off
     if (!pointing_error(r_eci, v_eci, estimated_quat, pvd_eci, q_want_prev, q_err, NULLPTR)) {
+        command_zero_moment(output_currents);
         return;
     }
 
+    // Bias-corrected angular rate
     float omega[3];
     for (int i = 0; i < 3; i++) {
         omega[i] = gyro_measurements[i] - estimated_gyro_bias[i];
     }
 
+    // PD torque command
     float t[3];
     pd_loop(q_err, omega, t);
 
+    // Torque -> magnetic moment (perpendicular to the measured field)
     float m[3];
     torque_2_moments(magnetometer_measurements, t, m);
 
+    // Moment -> coil currents
     moment2current3axis(m, Imax, output_currents);
 }

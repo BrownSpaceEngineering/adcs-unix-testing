@@ -17,6 +17,7 @@
 #include "include/photodiode_determination.h"
 #include "include/quat.h"
 #include "include/quest.h"
+#include "include/sgp4_step.h"
 #include "include/sunvec.h"
 #include "include/torque2moments.h"
 #include "include/matlab_reference.h"
@@ -1963,7 +1964,10 @@ typedef struct {
     float q_true[4]; // body -> ECI
     float omega[3];
     float gyro_bias[3];
-    float kepler[6]; // a (m), e, i, RAAN, argp, nu (deg)
+    float tle_mean[6]; // n (rev/day), e, i, RAAN, argp, M (rad)
+    double tle_epoch_jd;
+    double tle_bstar;
+    bool tle_sent;
     int unix_time;
     int jd_int;
     double jd_frac;
@@ -1977,20 +1981,34 @@ static void body_sim_init(body_sim_t* s) {
     s->q_true[2] = -0.5f;
     s->q_true[3] = 0.5f;
     quat_norm(s->q_true, s->q_true);
-    float kep[6] = {6.9e6f, 0.001f, 51.6f, 40.0f, 10.0f, 30.0f};
-    memcpy(s->kepler, kep, sizeof(kep));
+    double mean_motion = sqrt(3.986004418e14 / (6.9e6 * 6.9e6 * 6.9e6)) * 86400.0
+                         / (2.0 * M_PI);
+    float tle[6] = {(float)mean_motion, 0.001f, DEG2RAD(51.6f), DEG2RAD(40.0f),
+                    DEG2RAD(10.0f), DEG2RAD(30.0f)};
+    memcpy(s->tle_mean, tle, sizeof(tle));
     s->unix_time = 1767225600; // 2026-01-01 00:00:00 UTC
     double jd = unix_2_jd(s->unix_time);
     s->jd_int = (int)floor(jd);
     s->jd_frac = jd - s->jd_int;
+    s->tle_epoch_jd = jd;
+    s->tle_bstar = 0.0;
 }
 
 // Sensor readings consistent with the truth state
 static void body_sim_sensors(body_sim_t* s, bool sunlit, float* mag, float* gyro, float* diodes) {
-    float kep_rad[6] = {s->kepler[0], s->kepler[1], DEG2RAD(s->kepler[2]), DEG2RAD(s->kepler[3]),
-                        DEG2RAD(s->kepler[4]), DEG2RAD(s->kepler[5])};
     float r[3], b_eci[3], sun_eci[3], sun_body[3];
-    orbital_to_eci(kep_rad, r);
+    double tle[6], r_km[3], v_km_s[3], oe_osc[7];
+    for (int i = 0; i < 6; i++) tle[i] = (double)s->tle_mean[i];
+    double elapsed = ((double)s->jd_int + s->jd_frac - s->tle_epoch_jd) * 86400.0;
+    int orbit_status = sgp4_step(tle, s->tle_bstar, s->tle_epoch_jd, elapsed,
+                                 r_km, v_km_s, oe_osc);
+    if (orbit_status != 0) {
+        memset(mag, 0, sizeof(float) * 3);
+        memset(gyro, 0, sizeof(float) * 3);
+        memset(diodes, 0, sizeof(float) * NUM_DIODES);
+        return;
+    }
+    for (int i = 0; i < 3; i++) r[i] = (float)(1000.0 * r_km[i]);
     wmm_eci_embedded_v2(r, s->jd_int, (float)s->jd_frac, b_eci);
     ref_rotate_inv(s->q_true, b_eci, mag);
     for (int i = 0; i < 3; i++) {
@@ -2012,10 +2030,6 @@ static void body_sim_advance(body_sim_t* s, int dt_s) {
     rotationvec2quat(rv, dq);
     quat_multiply(s->q_true, dq, s->q_true);
     quat_norm(s->q_true, s->q_true);
-    float out[6];
-    propogateOrbitalElements(s->kepler[0], s->kepler[1], s->kepler[2], s->kepler[3], s->kepler[4], s->kepler[5],
-                             (float)dt_s, out);
-    memcpy(s->kepler, out, sizeof(out));
     s->unix_time += dt_s;
     s->jd_frac += dt_s / 86400.0;
     while (s->jd_frac >= 1.0) {
@@ -2024,13 +2038,19 @@ static void body_sim_advance(body_sim_t* s, int dt_s) {
     }
 }
 
-// One body() call with truth-consistent sensors. Always passes the true position so the
-// filter and the truth use the same orbit.
+// One body() call with SGP4-consistent sensors; upload the TLE only once.
 static void body_sim_step(body_sim_t* s, bool sunlit, int dt_s, float* currents) {
     body_sim_advance(s, dt_s);
     float mag[3], gyro[3], diodes[NUM_DIODES];
     body_sim_sensors(s, sunlit, mag, gyro, diodes);
-    body(s->last_mag, mag, gyro, diodes, s->kepler, s->unix_time, s->jd_int, (float)s->jd_frac, (float)dt_s, currents);
+    const float* update = NULLPTR;
+    if (!s->tle_sent) {
+        body_set_tle_metadata(s->tle_bstar, s->tle_epoch_jd);
+        update = s->tle_mean;
+        s->tle_sent = true;
+    }
+    body(s->last_mag, mag, gyro, diodes, update, s->unix_time, s->jd_int,
+         (float)s->jd_frac, (float)dt_s, currents);
     memcpy(s->last_mag, mag, sizeof(mag));
 }
 
@@ -2043,6 +2063,8 @@ static float body_attitude_error_deg(const body_sim_t* s) {
 void test_body(void) {
     begin_suite("ADCS step (body.c)");
     float currents[3], zero[3] = {0, 0, 0};
+    float zero_moment_currents[3];
+    moment2current3axis(zero, Imax, zero_moment_currents);
     float diodes_dark[NUM_DIODES] = {0};
     float mag[3] = {2e-5f, -1e-5f, 3e-5f}, mag_prev[3] = {2.1e-5f, -1.2e-5f, 2.9e-5f}, gyro[3] = {0.3f, -0.2f, 0.1f};
 
@@ -2056,7 +2078,7 @@ void test_body(void) {
     body_sim_t s;
     body_sim_init(&s);
     body_reset();
-    body(mag_prev, mag, gyro, diodes_dark, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, 0.5f, currents);
+    body(mag_prev, mag, gyro, diodes_dark, s.tle_mean, s.unix_time, s.jd_int, (float)s.jd_frac, 0.5f, currents);
     float expected[3];
     for (int i = 0; i < 3; i++) {
         expected[i] = -BDOT_GAIN * (mag[i] - mag_prev[i]) / 0.5f;
@@ -2066,13 +2088,13 @@ void test_body(void) {
 
     // Garbage in never crashes and never produces garbage out
     float nan_mag[3] = {NAN, 0, 0};
-    body(mag_prev, nan_mag, gyro, diodes_dark, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, 0.5f, currents);
+    body(mag_prev, nan_mag, gyro, diodes_dark, s.tle_mean, s.unix_time, s.jd_int, (float)s.jd_frac, 0.5f, currents);
     check_vec_close("NaN magnetometer -> zero currents", currents, zero, 3, 0);
-    body(mag_prev, mag, gyro, diodes_dark, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, 0.0f, currents);
+    body(mag_prev, mag, gyro, diodes_dark, s.tle_mean, s.unix_time, s.jd_int, (float)s.jd_frac, 0.0f, currents);
     check_vec_close("dt = 0 -> zero currents", currents, zero, 3, 0);
-    body(mag_prev, mag, gyro, diodes_dark, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, NAN, currents);
+    body(mag_prev, mag, gyro, diodes_dark, s.tle_mean, s.unix_time, s.jd_int, (float)s.jd_frac, NAN, currents);
     check_vec_close("dt = NaN -> zero currents", currents, zero, 3, 0);
-    body(NULLPTR, mag, gyro, diodes_dark, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, 0.5f, currents);
+    body(NULLPTR, mag, gyro, diodes_dark, s.tle_mean, s.unix_time, s.jd_int, (float)s.jd_frac, 0.5f, currents);
     check_vec_close("NULL previous magnetometer -> zero currents", currents, zero, 3, 0);
 
     // Slow rotation in sunlight -> QUEST initialization and pointing
@@ -2095,18 +2117,34 @@ void test_body(void) {
     float q_dummy[4];
     check_true(body_get_attitude(q_dummy), "attitude is initialized");
     check_less("QUEST initial attitude error (deg)", body_attitude_error_deg(&s), 5.0);
-    check_vec_close("transition step outputs zero currents", currents, zero, 3, 0);
+    check_vec_close("transition step commands zero moment", currents, zero_moment_currents, 3, 0);
 
     // Sunlit tracking for 20 minutes
-    bool finite = true, bounded = true, any_nonzero = false;
+    bool finite = true, bounded = true, any_nonzero = false, quiet_window_ok = true;
+    float prior_bias[3], max_predict_bias_step = 0.0f, max_update_bias_step = 0.0f;
+    body_get_gyro_bias(prior_bias);
     float tail = 0;
     for (int k = 0; k < 1200; k++) {
         body_sim_step(&s, true, 1, currents);
+        unsigned int cycle_tick = (unsigned int)k % BODY_MEASUREMENT_UPDATE_PERIOD_TICKS + 1u;
         finite &= all_finite(currents, 3);
         for (int i = 0; i < 3; i++) {
             bounded &= fabsf(currents[i]) <= Imax[i];
             any_nonzero |= !exactly(currents[i], 0);
+            if (cycle_tick >= BODY_MAGNETORQUER_QUIET_START_TICK) {
+                quiet_window_ok &= exactly(currents[i], zero_moment_currents[i]);
+            }
         }
+        float current_bias[3], bias_step[3];
+        body_get_gyro_bias(current_bias);
+        for (int i = 0; i < 3; i++) bias_step[i] = current_bias[i] - prior_bias[i];
+        float bias_change = l2_norm(bias_step, 3);
+        if (cycle_tick == BODY_MEASUREMENT_UPDATE_PERIOD_TICKS) {
+            max_update_bias_step = fmaxf(max_update_bias_step, bias_change);
+        } else {
+            max_predict_bias_step = fmaxf(max_predict_bias_step, bias_change);
+        }
+        memcpy(prior_bias, current_bias, sizeof(prior_bias));
         if (k >= 1000) {
             tail += body_attitude_error_deg(&s);
         }
@@ -2121,6 +2159,10 @@ void test_body(void) {
     check_true(finite, "sunlit: currents always finite");
     check_true(bounded, "sunlit: currents always within +-Imax");
     check_true(any_nonzero, "sunlit: the controller actually commands something");
+    check_true(quiet_window_ok, "ticks n through K command zero magnetic moment");
+    check_less("predict-only ticks leave gyro bias unchanged", max_predict_bias_step, 1e-5);
+    check_true(max_update_bias_step > max_predict_bias_step,
+               "only measurement ticks make a meaningful gyro-bias correction");
 
     // Eclipse for 15 minutes: magnetometer-only filtering keeps us close
     float worst = 0;
@@ -2132,14 +2174,48 @@ void test_body(void) {
     check_true(body_get_filter_resets() == 0, "eclipse: no filter resets");
     check_less("eclipse: max attitude error (deg)", worst, 5.0);
 
-    // A gyro glitch (the estimate spins ~170 deg away from the truth) must be detected and the
-    // filter reset + re-initialized, not silently tracked forever
+    // A bad magnetometer forces detumbling on both prediction and measurement ticks.
+    const char* bad_mag_cases[] = {"zero field", "NaN field", "NULL field",
+                                   "NULL previous field", "NaN previous field",
+                                   "zero field on measurement tick"};
+    float zero_mag[3] = {0}, bad_prev[3] = {NAN, 0, 0};
+    for (int bad = 0; bad < 6; bad++) {
+        if (bad == 5) {
+            for (unsigned int k = 0; k < BODY_MEASUREMENT_UPDATE_PERIOD_TICKS - 1u; k++) {
+                body_sim_step(&s, true, 1, currents);
+            }
+        }
+        body_sim_advance(&s, 1);
+        float m1[3], g1[3], d1[NUM_DIODES];
+        body_sim_sensors(&s, true, m1, g1, d1);
+        const float* current = m1;
+        const float* previous = s.last_mag;
+        if (bad == 0 || bad == 5) current = zero_mag;
+        if (bad == 1) current = nan_mag;
+        if (bad == 2) current = NULLPTR;
+        if (bad == 3) previous = NULLPTR;
+        if (bad == 4) previous = bad_prev;
+        body(previous, current, g1, d1, NULLPTR, s.unix_time, s.jd_int,
+             (float)s.jd_frac, 1.0f, currents);
+        report(!body_is_pointing() && !body_get_attitude(q_dummy),
+               "bad magnetometer enters detumbling", "%s", bad_mag_cases[bad]);
+        body(previous, current, g1, d1, NULLPTR, s.unix_time, s.jd_int,
+             (float)s.jd_frac, 1.0f, currents);
+        report(!body_is_pointing(), "bad magnetometer stays in detumbling",
+               "%s", bad_mag_cases[bad]);
+        memcpy(s.last_mag, m1, sizeof(m1));
+        body_sim_step(&s, true, 1, currents);
+        report(body_is_pointing(), "valid magnetometer can resume pointing",
+               "%s", bad_mag_cases[bad]);
+    }
+
+    // A large rate while pointing is treated as a new tumble or gyro fault.
     {
         float m1[3], g1[3], d1[NUM_DIODES];
         body_sim_advance(&s, 1);
         body_sim_sensors(&s, true, m1, g1, d1);
         g1[0] += 3.0f; // 3 rad for one second
-        body(s.last_mag, m1, g1, d1, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, 1.0f, currents);
+        body(s.last_mag, m1, g1, d1, NULLPTR, s.unix_time, s.jd_int, (float)s.jd_frac, 1.0f, currents);
         memcpy(s.last_mag, m1, sizeof(m1));
     }
     int steps_to_reset = -1;
@@ -2160,7 +2236,7 @@ void test_body(void) {
     // Position is propagated internally when no update is given
     body_reset();
     body_sim_init(&s);
-    body(mag_prev, mag, gyro, diodes_dark, s.kepler, s.unix_time, s.jd_int, (float)s.jd_frac, 1.0f, currents);
+    body(mag_prev, mag, gyro, diodes_dark, s.tle_mean, s.unix_time, s.jd_int, (float)s.jd_frac, 1.0f, currents);
     body(mag_prev, mag, gyro, diodes_dark, NULLPTR, s.unix_time + 1, s.jd_int, (float)s.jd_frac, 1.0f, currents);
     check_true(all_finite(currents, 3) && !body_is_pointing(), "propagating without a position update works");
 }

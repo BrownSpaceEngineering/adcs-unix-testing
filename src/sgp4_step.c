@@ -39,10 +39,7 @@ int sgp4_step(const double *oe_epoch, double bstar, double epoch_jd, double dt,
     key[6] = bstar;
     key[7] = epoch_jd;
 
-    bool changed = !initialized;
-    for (int k = 0; k < 8 && !changed; k++) {
-        changed = (key[k] != last_key[k]);
-    }
+    bool changed = !initialized || memcmp(key, last_key, sizeof(key)) != 0;
 
     if (changed) {
         memcpy(last_key, key, sizeof(key));
