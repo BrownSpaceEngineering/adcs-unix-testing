@@ -1,0 +1,9 @@
+function r = quatmultiply(q, p)
+% Shim for the Aerospace Toolbox function (not installed on every machine), used by
+% pointing_error.m. Hamilton product of 1x4 scalar-first quaternions, same as the toolbox.
+% Only added to the path by generate_matlab_reference.m when the real function is missing.
+r = [q(1)*p(1) - q(2)*p(2) - q(3)*p(3) - q(4)*p(4), ...
+     q(1)*p(2) + q(2)*p(1) + q(3)*p(4) - q(4)*p(3), ...
+     q(1)*p(3) - q(2)*p(4) + q(3)*p(1) + q(4)*p(2), ...
+     q(1)*p(4) + q(2)*p(3) - q(3)*p(2) + q(4)*p(1)];
+end

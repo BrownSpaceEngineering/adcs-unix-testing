@@ -1,4 +1,6 @@
 #ifndef TORQUE2MOMENTS
 #define TORQUE2MOMENTS
-void torque_2_moments(float* B, float* torques, float* moments);
+// Minimum-norm dipole m with m x B = (component of torques perpendicular to B).
+// Writes zeros if |B| ~ 0.
+void torque_2_moments(const float* B, const float* torques, float* moments);
 #endif
